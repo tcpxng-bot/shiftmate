@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShiftMate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@600;700&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <section class="login-gate" id="loginGate">
+    <form class="login-card" id="loginForm">
+      <span class="login-deco deco-one"></span>
+      <span class="login-deco deco-two"></span>
+      <span class="login-deco deco-three"></span>
+      <span class="login-cross cross-one"></span>
+      <span class="login-cross cross-two"></span>
+
+      <div class="login-hero">
+        <img class="login-logo" src="./assets/shiftmate-logo.png" alt="ShiftMate">
+      </div>
+      <div class="login-copy">
+        <p class="login-kicker"><span></span>WELCOME BACK<span></span></p>
+        <h1>เข้าสู่ระบบ</h1>
+        <p>ลงชื่อเข้าใช้เพื่อดูเวร บันทึก OT และติดตามอัตรากำลังของหน่วย</p>
+      </div>
+
+      <label>Username</label>
+      <div class="login-field">
+        <span class="field-icon user-icon" aria-hidden="true"></span>
+        <input class="input" id="loginUsername" autocomplete="username" required placeholder="admin">
+      </div>
+      <label>Password</label>
+      <div class="login-field">
+        <span class="field-icon lock-icon" aria-hidden="true"></span>
+        <input class="input" id="loginPassword" type="password" autocomplete="current-password" required placeholder="admin123">
+      </div>
+      <button class="btn primary login-submit" type="submit"><span class="login-arrow" aria-hidden="true"></span>เข้าสู่ระบบ</button>
+      <small id="loginMessage"></small>
+      <div class="login-help">
+        <span class="help-icon" aria-hidden="true"></span>
+        <div>
+          <strong>บัญชีทดลอง</strong>
+          <span>admin/admin123</span>
+          <span>head/head123 · senior/senior123 · staff/staff123</span>
+        </div>
+      </div>
+      <p class="login-support">หากมีปัญหาในการเข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>
+    </form>
+  </section>
+
+  <main class="app">
+    <header class="brand">
+      <img class="brand-logo" src="./assets/shiftmate-logo.png" alt="ShiftMate">
+      <div class="brand-copy">
+        <p class="eyebrow">OB/GYN OR & Recovery Unit</p>
+        <h1>ShiftMate</h1>
+        <p>Smart Shift, Leave & Vacation Management</p>
+      </div>
+      <div class="today-card">
+        <span id="todayLabel"></span>
+        <strong id="todaySummary">พร้อมใช้งาน</strong>
+        <button class="btn small" id="logoutBtn" type="button">ออกจากระบบ</button>
+      </div>
+    </header>
+
+    <nav class="top-tabs" aria-label="ShiftMate modules">
+      <button class="tab is-active" type="button" data-tab="dashboard">Dashboard</button>
+      <button class="tab" type="button" data-tab="staff">Staff</button>
+      <button class="tab" type="button" data-tab="schedule">ตารางเวร</button>
+      <button class="tab" type="button" data-tab="ot">OT</button>
+      <button class="tab" type="button" data-tab="locsee">LOCSee</button>
+    </nav>
+
+    <section class="panel is-active" data-panel="dashboard">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Today</p>
+          <h2>ภาพรวมกำลังคนวันนี้</h2>
+        </div>
+        <div>
+          <select class="input compact wide-date" id="dashboardDate"></select>
+          <p class="hint" id="dashboardDateLabel"></p>
+        </div>
+      </div>
+      <div class="metric-grid">
+        <article class="metric"><span id="totalStaffLabel">เจ้าหน้าที่ทั้งหมด</span><strong id="totalStaffMetric">0</strong></article>
+        <article class="metric"><span id="workingLabel">ปฏิบัติงาน</span><strong id="workingMetric">0</strong></article>
+        <article class="metric"><span id="leaveLabel">ลา / หยุด</span><strong id="leaveMetric">0</strong></article>
+        <article class="metric"><span id="meetingLabel">ประชุม / อบรม</span><strong id="meetingMetric">0</strong></article>
+        <article class="metric"><span id="monthOtLabel">OT เดือนนี้</span><strong id="monthOtMetric">0 ชม.</strong></article>
+      </div>
+      <div class="grid two">
+        <article class="card">
+          <h3>อัตรากำลังประจำวัน</h3>
+          <div class="list" id="todayShiftList"></div>
+        </article>
+        <article class="card">
+          <h3>OT รอตรวจ</h3>
+          <div class="list" id="pendingOtList"></div>
+        </article>
+      </div>
+      <div class="dashboard-grid">
+        <article class="card command-card">
+          <div class="section-head mini">
+            <h3>Workforce Alerts</h3>
+            <span class="status-pill" id="alertCount">0 alert</span>
+          </div>
+          <div class="list" id="workforceAlerts"></div>
+        </article>
+        <article class="card command-card">
+          <h3>Shift Distribution</h3>
+          <div class="bar-chart" id="shiftChart"></div>
+        </article>
+        <article class="card command-card">
+          <h3>OT Summary</h3>
+          <div class="bar-chart" id="otChart"></div>
+        </article>
+        <article class="card command-card">
+          <h3>Upcoming Events</h3>
+          <div class="list" id="upcomingEvents"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel staff-panel" data-panel="staff">
+      <div class="staff-page-head">
+        <div>
+          <p class="eyebrow">Staff Management</p>
+          <h2>👩‍⚕️ Staff Management</h2>
+          <p>จัดการข้อมูลบุคลากร ตารางเวร สิทธิ์การใช้งาน และ OT</p>
+        </div>
+        <button class="btn primary staff-add-btn" type="button" id="focusStaffForm">+ เพิ่มเจ้าหน้าที่</button>
+      </div>
+
+      <div class="staff-stats">
+        <article><span>👩‍⚕️ เจ้าหน้าที่ทั้งหมด</span><strong id="staffTotalKpi">0 คน</strong></article>
+        <article><span>🩺 RN</span><strong id="staffRnKpi">0 คน</strong></article>
+        <article><span>💚 PN</span><strong id="staffPnKpi">0 คน</strong></article>
+        <article><span>🤝 HP</span><strong id="staffHpKpi">0 คน</strong></article>
+        <article><span>⏱ OT รวม</span><strong id="staffOtKpi">0 ชม.</strong></article>
+      </div>
+
+      <div class="staff-management-layout">
+        <form class="card form staff-form-card" id="staffForm">
+          <div class="form-title-row">
+            <h3>➕ เพิ่ม / แก้ไขเจ้าหน้าที่</h3>
+            <small id="staffFormMode">New Staff</small>
+          </div>
+          <input type="hidden" id="staffId">
+
+          <section class="form-section">
+            <h4>ข้อมูลทั่วไป</h4>
+            <label>ชื่อ-นามสกุล</label>
+            <input class="input" id="staffName" required placeholder="เช่น พี่แป้ง">
+            <div class="grid two tight">
+              <div>
+                <label>ตำแหน่ง</label>
+                <select class="input" id="staffRole">
+                  <option>RN</option>
+                  <option>PN</option>
+                  <option>HP</option>
+                  <option>Head Nurse</option>
+                  <option>Supervisor</option>
+                </select>
+              </div>
+              <div>
+                <label>Role</label>
+                <select class="input" id="staffAccessRole">
+                  <option value="staff">Staff</option>
+                  <option value="senior">Senior</option>
+                  <option value="head_nurse">Head Nurse</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <h4>สิทธิ์การใช้งาน</h4>
+            <label>Username</label>
+            <input class="input" id="staffUsername" placeholder="เช่น pang">
+            <label>Password</label>
+            <div class="password-row">
+              <input class="input" id="staffPassword" type="password" placeholder="ตั้งรหัสชั่วคราว">
+              <button class="btn icon-btn" type="button" id="toggleStaffPassword" aria-label="แสดงรหัสผ่าน">👁</button>
+            </div>
+            <button class="btn staff-generate" id="generateStaffPassword" type="button">🎲 Generate</button>
+          </section>
+
+          <section class="form-section">
+            <h4>สิทธิ์วันลาและ OT</h4>
+            <div class="grid two tight">
+              <div>
+                <label>🏖 Annual Leave</label>
+                <input class="input" id="staffLeave" type="number" min="0" value="15">
+              </div>
+              <div>
+                <label>⏱ OT Balance</label>
+                <input class="input" id="staffOtBalance" type="number" min="0" value="0">
+              </div>
+            </div>
+          </section>
+
+          <div class="staff-form-actions">
+            <button class="btn primary" type="submit">💾 บันทึกข้อมูล</button>
+            <button class="btn" id="clearStaffForm" type="button">ยกเลิก</button>
+          </div>
+        </form>
+
+        <article class="card staff-list-card">
+          <div class="staff-list-head">
+            <div>
+              <h3>รายชื่อเจ้าหน้าที่</h3>
+              <p>ค้นหา กรอง และจัดลำดับเจ้าหน้าที่ของหน่วย</p>
+            </div>
+          </div>
+          <div class="staff-toolbar">
+            <input class="input" id="staffSearch" placeholder="🔍 ค้นหาเจ้าหน้าที่">
+            <select class="input" id="staffFilter">
+              <option value="all">All</option>
+              <option value="RN">RN</option>
+              <option value="PN">PN</option>
+              <option value="HP">HP</option>
+            </select>
+            <select class="input" id="staffSort">
+              <option value="order">ลำดับ</option>
+              <option value="name">ชื่อ</option>
+              <option value="position">ตำแหน่ง</option>
+              <option value="ot">OT</option>
+              <option value="leave">วันลา</option>
+            </select>
+          </div>
+          <div class="staff-card-grid" id="staffRows"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="schedule">
+      <div class="schedule-dashboard-head">
+        <div>
+          <p class="eyebrow">Monthly Schedule</p>
+          <h2>📅 ตารางเวรรายเดือน</h2>
+          <p class="hint"><span id="scheduleGroupLabel">RN Ward</span> · <span id="scheduleMonthLabel">June 2026</span></p>
+        </div>
+        <div class="schedule-actions">
+          <button class="btn" id="prevScheduleMonth" type="button">Previous Month</button>
+          <button class="btn" id="nextScheduleMonth" type="button">Next Month</button>
+          <button class="btn" type="button">Export Excel</button>
+          <button class="btn" type="button">Print</button>
+          <input class="input compact" id="scheduleMonth" type="month">
+          <button class="btn" id="copyPreviousMonth" type="button">คัดลอกจากเดือนก่อน</button>
+        </div>
+      </div>
+      <div class="schedule-kpis">
+        <article><span>👩‍⚕️ RN ทั้งหมด</span><strong id="rnTotalKpi">0 คน</strong></article>
+        <article><span>🧑‍⚕️ PN ทั้งหมด</span><strong id="pnTotalKpi">0 คน</strong></article>
+        <article><span>🏖 Vacation</span><strong id="vacationKpi">0 วัน</strong></article>
+        <article><span>📚 Training</span><strong id="trainingKpi">0 วัน</strong></article>
+        <article><span>⚠ เวรขาด</span><strong id="shortageKpi">0 วัน</strong></article>
+      </div>
+      <div class="sub-tabs">
+        <button class="sub-tab is-active" type="button" data-group="RN">RN</button>
+        <button class="sub-tab" type="button" data-group="PN">PN</button>
+      </div>
+      <div class="legend">
+        <span class="badge r1">🟦 R1</span>
+        <span class="badge r3">🟩 R3</span>
+        <span class="badge r4">🟨 R4</span>
+        <span class="badge rr">🟪 RR</span>
+        <span class="badge s">🟧 S1/S3/S5</span>
+        <span class="badge vac">🟢 VAC</span>
+        <span class="badge event">🔵 อบรม</span>
+        <span class="badge event">🟡 ประชุม</span>
+        <span class="badge off">⚫ หยุด</span>
+      </div>
+      <div class="schedule-workspace">
+        <section class="schedule-shell">
+          <div class="schedule-table" id="scheduleTable"></div>
+        </section>
+        <aside class="schedule-side-panel">
+          <h3>Today's Staffing</h3>
+          <div class="list" id="scheduleSidePanel"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="panel ot-panel" data-panel="ot">
+      <div class="ot-page-head">
+        <div>
+          <p class="eyebrow">OT Book</p>
+          <h2>⏱ สมุดบันทึก OT รายบุคคล</h2>
+          <span>จัดการ OT สะสม, Vacation Bank และประวัติ OT ของเจ้าหน้าที่</span>
+        </div>
+        <div class="ot-head-actions">
+          <button class="btn" type="button">📊 Dashboard</button>
+          <button class="btn" type="button">📥 Export Excel</button>
+        </div>
+      </div>
+
+      <div class="ot-kpis">
+        <article><span>⏱ OT เดือนนี้</span><strong id="otMonthKpi">0 ชั่วโมง</strong></article>
+        <article><span>👩‍⚕️ ผู้ได้รับ OT</span><strong id="otPeopleKpi">0 คน</strong></article>
+        <article><span>🏖 Vacation Bank</span><strong id="otVacationBankKpi">0 ชั่วโมง</strong></article>
+        <article><span>📅 รายการ OT</span><strong id="otRecordKpi">0 รายการ</strong></article>
+        <article><span>💰 OT รออนุมัติ</span><strong id="otPendingKpi">0 รายการ</strong></article>
+      </div>
+
+      <div class="ot-workspace">
+        <form class="card form ot-entry-card" id="otForm">
+          <h3>➕ เพิ่มรายการ OT</h3>
+
+          <section class="ot-form-section">
+            <h4>ข้อมูลทั่วไป</h4>
+            <div class="grid two tight">
+              <div>
+                <label>📅 วันที่</label>
+                <input class="input" id="otDate" type="date" required>
+                <p class="hint" id="otDateLabel"></p>
+              </div>
+              <div>
+                <label>🏥 ห้อง / จุดปฏิบัติงาน</label>
+                <select class="input" id="otRoom">
+                  <option>R1</option>
+                  <option>R3</option>
+                  <option>R4</option>
+                  <option>RR</option>
+                </select>
+                <p class="hint">ระบบจะดึงรายชื่อจากตารางเวรอัตโนมัติ</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="ot-form-section">
+            <h4>สมาชิกที่ได้รับ OT</h4>
+            <div class="member-picker" id="otMemberList"></div>
+          </section>
+
+          <section class="ot-form-section">
+            <h4>ผู้ตรวจ OT</h4>
+            <label>👤 ผู้ตรวจ</label>
+            <select class="input" id="otApprover"></select>
+            <p class="hint" id="otApproverHint">ระบบจะแนะนำ RN senior จากตารางเวรตามวันที่และห้องจริง</p>
+          </section>
+
+          <section class="ot-form-section">
+            <h4>เวลา OT</h4>
+            <div class="grid three tight ot-time-grid">
+              <div>
+                <label>🕒 เวลาเริ่ม</label>
+                <input class="input" id="otStart" type="time" value="16:30" required>
+              </div>
+              <div>
+                <label>🕒 เวลาสิ้นสุด</label>
+                <input class="input" id="otEnd" type="time" value="17:30" required>
+              </div>
+              <div>
+                <label>หักเวลา OT (นาที)</label>
+                <input class="input" id="otDeductMinutes" type="number" min="0" value="0">
+              </div>
+            </div>
+            <div class="ot-live-total">
+              <span>⏱ รวม OT</span>
+              <strong id="otLiveTotal">1 ชั่วโมง 0 นาที</strong>
+              <small>ระบบแยกชั่วโมงเต็มเป็น OT และเศษนาทีเป็นสะสม</small>
+            </div>
+          </section>
+
+          <section class="ot-form-section">
+            <h4>หมายเหตุ</h4>
+            <textarea class="input" id="otNote" rows="3" placeholder="ระบุรายละเอียดเพิ่มเติม..."></textarea>
+          </section>
+
+          <div class="ot-form-actions">
+            <button class="btn primary" type="submit">💾 บันทึก OT</button>
+            <button class="btn" id="clearOtForm" type="button">ยกเลิก</button>
+          </div>
+        </form>
+
+        <aside class="ot-summary-card card">
+          <h3>📈 สรุปรายบุคคล</h3>
+          <input class="input" id="otSummarySearch" placeholder="🔍 ค้นหาเจ้าหน้าที่">
+          <div class="ot-profile-card" id="otProfileCard"></div>
+          <form class="vacation-conversion-card" id="vacationCreditForm">
+            <div>
+              <strong>🏖 Vacation Conversion</strong>
+              <span>1 วันลา = 7 ชั่วโมงสะสม</span>
+            </div>
+            <select class="input" id="vacationCreditStaff"></select>
+            <div class="grid two tight">
+              <input class="input" id="vacationCreditDays" type="number" min="1" value="1" aria-label="จำนวนวัน Vacation">
+              <button class="btn" type="submit">+ เพิ่มชั่วโมงสะสม</button>
+            </div>
+          </form>
+          <div class="ot-leaderboard">
+            <h4>🏆 Top 5 OT</h4>
+            <div id="otLeaderboard"></div>
+          </div>
+          <div class="list is-hidden" id="otPersonSummary"></div>
+        </aside>
+      </div>
+
+      <article class="card ot-history-card">
+        <div class="ot-history-head">
+          <div>
+            <h3>ประวัติ OT ล่าสุด</h3>
+            <p>Timeline รายการ OT และสถานะการรับรอง</p>
+          </div>
+          <div class="ot-filter-bar">
+            <input class="input compact" id="otFilterMonth" type="month">
+            <select class="input compact" id="otFilterStaff"></select>
+            <select class="input compact" id="otFilterType">
+              <option value="">All Type</option>
+              <option value="RN">RN</option>
+              <option value="PN">PN</option>
+              <option value="HP">HP</option>
+            </select>
+            <select class="input compact" id="otFilterStatus">
+              <option value="">All Status</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+        </div>
+        <div class="ot-timeline" id="otRows"></div>
+      </article>
+    </section>
+
+    <section class="panel" data-panel="locsee">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">LOC Vacation</p>
+          <h2>LOCSee Integration</h2>
+        </div>
+      </div>
+      <article class="card loc-card">
+        <h3>โมดูล LOCSee พร้อมเชื่อมต่อใน Phase 2</h3>
+        <p>เฟสนี้วาง ShiftMate เป็นเว็บหลักก่อน จากนั้นจะย้าย LOCSee เดิมเข้ามาเป็นโมดูลย่อยเพื่อเชื่อมกับวันลา ตารางเวร และ Calendar กลาง</p>
+        <div class="loc-actions">
+          <span class="badge vac">LOC Vacation</span>
+          <span class="badge event">Leave Management</span>
+          <span class="badge r1">Master Calendar</span>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
