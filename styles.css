@@ -2765,7 +2765,7 @@ label {
   display: grid;
   align-content: start;
   gap: 1px;
-  min-height: 46px;
+  min-height: 52px;
   padding: 4px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -2809,6 +2809,11 @@ label {
 .locsee-vac-day.has-slot {
   border-color: rgba(39, 119, 96, .45);
   background: #e7f5ed;
+}
+
+.locsee-vac-day.has-booking {
+  border-color: rgba(39, 119, 96, .58);
+  background: #dff3ea;
 }
 
 .locsee-vac-day.has-winner {
