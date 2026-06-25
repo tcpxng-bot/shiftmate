@@ -1467,6 +1467,8 @@ function locseeVacationMonthCard(monthInfo) {
 function locseeVacationDayCell(date) {
   const slots = locseeSlotsForDate(date);
   const winners = uniqueNames(slots.flatMap(slotWinners));
+  const bookingNames = uniqueNames(slots.flatMap(slot => bookingsForSlot(slot.id).map(item => item.person_name || item.personName || "")));
+  const displayNames = winners.length ? winners : bookingNames;
   const bookingTotal = slots.reduce((total, slot) => total + bookingsForSlot(slot.id).length, 0);
   const holiday = holidayName(date);
   const classes = [
@@ -1474,19 +1476,21 @@ function locseeVacationDayCell(date) {
     isWeekend(date) ? "is-weekend" : "",
     holiday ? "is-holiday" : "",
     slots.length ? "has-slot" : "",
+    bookingNames.length ? "has-booking" : "",
     winners.length ? "has-winner" : ""
   ].filter(Boolean).join(" ");
   const title = [
     formatDisplayDate(date),
     holiday,
     slots.length ? slots.map(slot => `${slot.label || slotDateLabel(slot)} (${bookingsForSlot(slot.id).length})`).join(" / ") : "",
+    bookingNames.length ? `Bookings: ${bookingNames.join(", ")}` : "",
     winners.length ? `Winner: ${winners.join(", ")}` : ""
   ].filter(Boolean).join(" · ");
   return `
     <div class="${classes}" title="${escapeHtml(title)}">
       <span>${parseLocalDate(date).getDate()}</span>
       ${bookingTotal ? `<small>${bookingTotal} จอง</small>` : ""}
-      ${winners.length ? `<b>${escapeHtml(winners.slice(0, 2).join(", "))}</b>` : ""}
+      ${displayNames.length ? `<b>${escapeHtml(displayNames.slice(0, 2).join(", "))}</b>` : ""}
     </div>
   `;
 }
@@ -1631,6 +1635,9 @@ function initLocseeSupabase() {
 
 async function loadLocseeCloudData() {
   if (!locseeDb) return false;
+  const localSlots = readStore(STORE.locseeSlots, []);
+  const localBookings = readStore(STORE.locseeBookings, []);
+  const localHolidays = readStore(STORE.locseeHolidays, []);
   try {
     const [slotRes, bookingRes, holidayRes] = await Promise.all([
       locseeDb.from("loc_slots").select("*").order("start_date", { ascending: true }),
@@ -1640,9 +1647,21 @@ async function loadLocseeCloudData() {
     if (slotRes.error) throw slotRes.error;
     if (bookingRes.error) throw bookingRes.error;
     if (holidayRes.error) throw holidayRes.error;
-    locseeSlots = slotRes.data || [];
-    locseeBookings = bookingRes.data || [];
-    locseeSpecialHolidays = holidayRes.data || [];
+    const cloudSlots = slotRes.data || [];
+    const cloudBookings = bookingRes.data || [];
+    const cloudHolidays = holidayRes.data || [];
+    if (!cloudSlots.length && localSlots.length) {
+      locseeSlots = localSlots;
+      locseeBookings = localBookings;
+      locseeSpecialHolidays = localHolidays;
+      locseeCloudLoaded = true;
+      renderAll();
+      await seedLocseeCloudFromLocal(localSlots, localBookings, localHolidays);
+      return true;
+    }
+    locseeSlots = cloudSlots;
+    locseeBookings = cloudBookings;
+    locseeSpecialHolidays = cloudHolidays;
     locseeCloudLoaded = true;
     writeLocseeBookingStore();
     renderAll();
@@ -1651,6 +1670,27 @@ async function loadLocseeCloudData() {
     console.warn("LOCSee Supabase load failed", error);
     locseeCloudLoaded = false;
     renderAll();
+    return false;
+  }
+}
+
+async function seedLocseeCloudFromLocal(slots, bookings, holidays) {
+  if (!locseeDb || !slots.length) return false;
+  try {
+    const { error: slotError } = await locseeDb.from("loc_slots").insert(slots.map(locseeSlotCloudRow));
+    if (slotError) throw slotError;
+    if (bookings.length) {
+      const { error: bookingError } = await locseeDb.from("loc_bookings").insert(bookings.map(locseeBookingCloudRow));
+      if (bookingError) throw bookingError;
+    }
+    if (holidays.length) {
+      const { error: holidayError } = await locseeDb.from("special_holidays").insert(holidays.map(locseeHolidayCloudRow));
+      if (holidayError) throw holidayError;
+    }
+    await loadLocseeCloudData();
+    return true;
+  } catch (error) {
+    console.warn("LOCSee local seed failed", error);
     return false;
   }
 }
@@ -1729,6 +1769,15 @@ function locseeBookingCloudRow(row) {
     slot_id: row.slot_id || row.slotId,
     person_name: row.person_name || row.personName || "",
     leave_days: clampNumber(Number(row.leave_days || row.leaveDays || 1), 1, 5),
+    created_at: row.created_at || new Date().toISOString()
+  };
+}
+
+function locseeHolidayCloudRow(row) {
+  return {
+    id: row.id,
+    name: row.name || row.title || "",
+    holiday_date: row.holiday_date || row.date,
     created_at: row.created_at || new Date().toISOString()
   };
 }
