@@ -2730,22 +2730,22 @@ label {
 
 .locsee-vacation-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
+  gap: 14px;
 }
 
 .locsee-vac-month {
   min-width: 0;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid rgba(206, 214, 255, .82);
   border-radius: 16px;
   background: #fbfdff;
 }
 
 .locsee-vac-month h4 {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--navy);
-  font-size: 18px;
+  font-size: 20px;
   text-align: center;
 }
 
@@ -2753,7 +2753,7 @@ label {
 .locsee-vac-days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: 5px;
 }
 
 .locsee-vac-weekdays {
@@ -2770,9 +2770,9 @@ label {
 .locsee-vac-day {
   display: grid;
   align-content: start;
-  gap: 1px;
-  min-height: 52px;
-  padding: 4px;
+  gap: 3px;
+  min-height: 58px;
+  padding: 5px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: #fff;
@@ -2797,6 +2797,8 @@ label {
 
 .locsee-vac-day b {
   color: #245b42;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .locsee-vac-day.is-empty {
@@ -2974,7 +2976,7 @@ label {
   }
 
   .locsee-vacation-grid {
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
   }
 
   .locsee-workspace,
@@ -3160,7 +3162,7 @@ label {
   }
 
   .locsee-vac-day {
-    min-height: 42px;
+    min-height: 48px;
   }
 
 }
