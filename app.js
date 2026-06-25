@@ -1456,11 +1456,13 @@ function renderLocseeRows() {
 
 function renderLocseeVacationTable() {
   if (!el.locseeVacationGrid) return;
-  const months = locseeFiscalMonths(el.locseeMonth.value);
+  const months = locseeFiscalMonths(resolveLocseeCalendarMonth(el.locseeMonth.value));
   const fiscalBe = months[11].year + 543;
   const sourceLabel = locseeCloudLoaded ? "Online/Supabase" : locseeCloudStatus;
-  const matchedBookings = locseeBookings.filter(item => locseeSlots.some(slot => sameId(bookingSlotId(item), slot.id))).length;
-  el.locseeVacationYearLabel.textContent = `${sourceLabel} · ${locseeSlots.length} slots · ${locseeBookings.length} bookings · ${matchedBookings} matched · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
+  const fiscalSlots = locseeSlots.filter(slot => locseeSlotInMonths(slot, months));
+  const fiscalBookings = locseeBookings.filter(item => fiscalSlots.some(slot => sameId(bookingSlotId(item), slot.id)));
+  const matchedBookings = fiscalBookings.filter(item => fiscalSlots.some(slot => sameId(bookingSlotId(item), slot.id))).length;
+  el.locseeVacationYearLabel.textContent = `${sourceLabel} · ${fiscalSlots.length} fiscal slots · ${fiscalBookings.length} bookings · ${matchedBookings} matched · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
   el.locseeVacationGrid.innerHTML = months.map(month => locseeVacationMonthCard(month)).join("");
 }
 
@@ -2187,7 +2189,26 @@ function locseeSlotsForDate(dateText) {
 }
 
 function normalizeDateText(value) {
-  return String(value || "").slice(0, 10);
+  const raw = String(value || "").slice(0, 10);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return raw;
+  const year = Number(match[1]);
+  if (year > 2400) return `${year - 543}-${match[2]}-${match[3]}`;
+  return raw;
+}
+
+function resolveLocseeCalendarMonth(monthValue) {
+  const currentMonths = locseeFiscalMonths(monthValue);
+  if (!locseeSlots.length || locseeSlots.some(slot => locseeSlotInMonths(slot, currentMonths))) return monthValue;
+  const sortedSlots = [...locseeSlots].filter(slot => slotStartDate(slot)).sort((a, b) => slotStartDate(a).localeCompare(slotStartDate(b)));
+  return sortedSlots[0] ? slotStartDate(sortedSlots[0]).slice(0, 7) : monthValue;
+}
+
+function locseeSlotInMonths(slot, months) {
+  const first = `${months[0].year}-${String(months[0].month).padStart(2, "0")}-01`;
+  const lastMonth = months[months.length - 1];
+  const last = iso(new Date(lastMonth.year, lastMonth.month, 0));
+  return slotStartDate(slot) <= last && slotEndDate(slot) >= first;
 }
 
 function locseeFiscalMonths(monthValue) {
