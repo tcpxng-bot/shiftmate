@@ -2,6 +2,10 @@ const STORE = {
   staff: "shiftmate.staff",
   schedule: "shiftmate.schedule",
   ot: "shiftmate.ot",
+  locsee: "shiftmate.locsee",
+  locseeSlots: "locsee.booking.slots",
+  locseeBookings: "locsee.booking.bookings",
+  locseeHolidays: "locsee.booking.holidays",
   activeTab: "shiftmate.activeTab",
   scheduleGroup: "shiftmate.scheduleGroup",
   session: "shiftmate.session"
@@ -66,9 +70,21 @@ function isHoliday(dateText) {
   return Boolean(holidayName(dateText));
 }
 
+function parseLocalDate(dateText) {
+  const [year, month, day] = dateText.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 let staff = readStore(STORE.staff, seedStaff());
 let schedule = readStore(STORE.schedule, {});
 let otRecords = readStore(STORE.ot, []);
+let locseeRequests = readStore(STORE.locsee, []);
+let locseeSlots = readStore(STORE.locseeSlots, []);
+let locseeBookings = readStore(STORE.locseeBookings, []);
+let locseeSpecialHolidays = readStore(STORE.locseeHolidays, []);
+let locseeDb = null;
+let locseeCloudEnabled = false;
+let locseeCloudLoaded = false;
 let activeScheduleGroup = localStorage.getItem(STORE.scheduleGroup) || "RN";
 let currentUserId = sessionStorage.getItem(STORE.session) || "";
 
@@ -168,22 +184,64 @@ const el = {
   clearOtForm: document.querySelector("#clearOtForm"),
   vacationCreditForm: document.querySelector("#vacationCreditForm"),
   vacationCreditStaff: document.querySelector("#vacationCreditStaff"),
-  vacationCreditDays: document.querySelector("#vacationCreditDays")
+  vacationCreditDays: document.querySelector("#vacationCreditDays"),
+  locseeMonth: document.querySelector("#locseeMonth"),
+  locseeStatusFilter: document.querySelector("#locseeStatusFilter"),
+  locseePendingKpi: document.querySelector("#locseePendingKpi"),
+  locseeApprovedKpi: document.querySelector("#locseeApprovedKpi"),
+  locseeUsedKpi: document.querySelector("#locseeUsedKpi"),
+  locseeSyncedKpi: document.querySelector("#locseeSyncedKpi"),
+  locseeForm: document.querySelector("#locseeForm"),
+  locseeFormMode: document.querySelector("#locseeFormMode"),
+  locseeRequestId: document.querySelector("#locseeRequestId"),
+  locseeStaff: document.querySelector("#locseeStaff"),
+  locseeStartDate: document.querySelector("#locseeStartDate"),
+  locseeEndDate: document.querySelector("#locseeEndDate"),
+  locseeType: document.querySelector("#locseeType"),
+  locseePriority: document.querySelector("#locseePriority"),
+  locseeNote: document.querySelector("#locseeNote"),
+  locseeImpact: document.querySelector("#locseeImpact"),
+  clearLocseeForm: document.querySelector("#clearLocseeForm"),
+  locseeCalendar: document.querySelector("#locseeCalendar"),
+  locseeUpcoming: document.querySelector("#locseeUpcoming"),
+  locseeRows: document.querySelector("#locseeRows"),
+  locseeSlotForm: document.querySelector("#locseeSlotForm"),
+  locseeSlotStart: document.querySelector("#locseeSlotStart"),
+  locseeSlotDays: document.querySelector("#locseeSlotDays"),
+  locseeSlotNames: document.querySelector("#locseeSlotNames"),
+  locseeBookingForm: document.querySelector("#locseeBookingForm"),
+  locseeBookingSlot: document.querySelector("#locseeBookingSlot"),
+  locseeBookingName: document.querySelector("#locseeBookingName"),
+  locseeSlotRows: document.querySelector("#locseeSlotRows"),
+  locseeVacationYearLabel: document.querySelector("#locseeVacationYearLabel"),
+  locseeVacationGrid: document.querySelector("#locseeVacationGrid")
 };
 
 init();
 
 function init() {
   ensureDefaultAdmin();
+  initLocseeSupabase();
+  el.loginUsername.value = "";
+  el.loginPassword.value = "";
+  setTimeout(() => {
+    el.loginUsername.value = "";
+    el.loginPassword.value = "";
+  }, 100);
   const today = new Date();
   el.todayLabel.textContent = formatLongDate(iso(today));
   el.scheduleMonth.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   el.otFilterMonth.value = el.scheduleMonth.value;
+  el.locseeMonth.value = el.scheduleMonth.value;
   el.otDate.value = iso(today);
+  el.locseeStartDate.value = iso(today);
+  el.locseeEndDate.value = iso(today);
+  el.locseeSlotStart.value = iso(today);
   setTab(localStorage.getItem(STORE.activeTab) || "dashboard");
   bindEvents();
   syncAuthState();
   renderAll();
+  loadLocseeCloudData();
 }
 
 function bindEvents() {
@@ -230,12 +288,21 @@ function bindEvents() {
   });
   el.otForm.addEventListener("submit", saveOtRecord);
   el.vacationCreditForm.addEventListener("submit", saveVacationCredit);
+  el.locseeForm.addEventListener("submit", saveLocseeRequest);
+  el.locseeSlotForm.addEventListener("submit", saveLocseeSlot);
+  el.locseeBookingForm.addEventListener("submit", saveLocseeBooking);
   el.otFilterStaff.addEventListener("change", renderOt);
   el.otFilterMonth.addEventListener("change", renderOt);
   el.otFilterType.addEventListener("change", renderOt);
   el.otFilterStatus.addEventListener("change", renderOt);
   el.otSummarySearch.addEventListener("input", renderOtSummary);
+  el.locseeMonth.addEventListener("change", renderLocsee);
+  el.locseeStatusFilter.addEventListener("change", renderLocsee);
+  [el.locseeStaff, el.locseeStartDate, el.locseeEndDate, el.locseeType].forEach(input => {
+    input.addEventListener("change", renderLocseeImpact);
+  });
   el.clearOtForm.addEventListener("click", clearOtForm);
+  el.clearLocseeForm.addEventListener("click", clearLocseeForm);
   [el.otStart, el.otEnd, el.otDeductMinutes].forEach(input => input.addEventListener("input", updateOtLiveTotal));
 
   document.addEventListener("click", event => {
@@ -246,6 +313,15 @@ function bindEvents() {
     const approveOtId = event.target.closest("[data-approve-ot]")?.dataset.approveOt;
     const editOtId = event.target.closest("[data-edit-ot]")?.dataset.editOt;
     const hospitalOtId = event.target.closest("[data-hospital-ot]")?.dataset.hospitalOt;
+    const editLocseeId = event.target.closest("[data-edit-locsee]")?.dataset.editLocsee;
+    const approveLocseeId = event.target.closest("[data-approve-locsee]")?.dataset.approveLocsee;
+    const rejectLocseeId = event.target.closest("[data-reject-locsee]")?.dataset.rejectLocsee;
+    const syncLocseeId = event.target.closest("[data-sync-locsee]")?.dataset.syncLocsee;
+    const deleteLocseeId = event.target.closest("[data-delete-locsee]")?.dataset.deleteLocsee;
+    const drawLocseeSlotId = event.target.closest("[data-draw-locsee-slot]")?.dataset.drawLocseeSlot;
+    const syncLocseeSlotId = event.target.closest("[data-sync-locsee-slot]")?.dataset.syncLocseeSlot;
+    const reopenLocseeSlotId = event.target.closest("[data-reopen-locsee-slot]")?.dataset.reopenLocseeSlot;
+    const deleteLocseeSlotId = event.target.closest("[data-delete-locsee-slot]")?.dataset.deleteLocseeSlot;
 
     if (editStaffId && canManageStaff()) editStaff(editStaffId);
     if (deleteStaffId && canManageStaff()) deleteStaff(deleteStaffId);
@@ -254,6 +330,15 @@ function bindEvents() {
     if (editOtId) editOtRecord(editOtId);
     if (approveOtId) approveOtRecord(approveOtId);
     if (hospitalOtId) toggleHospitalPosted(hospitalOtId);
+    if (editLocseeId) editLocseeRequest(editLocseeId);
+    if (approveLocseeId) approveLocseeRequest(approveLocseeId);
+    if (rejectLocseeId) rejectLocseeRequest(rejectLocseeId);
+    if (syncLocseeId) syncLocseeRequest(syncLocseeId);
+    if (deleteLocseeId) deleteLocseeRequest(deleteLocseeId);
+    if (drawLocseeSlotId) drawLocseeSlot(drawLocseeSlotId);
+    if (syncLocseeSlotId) syncLocseeSlot(drawLocseeSlotId || syncLocseeSlotId);
+    if (reopenLocseeSlotId) reopenLocseeSlot(reopenLocseeSlotId);
+    if (deleteLocseeSlotId) deleteLocseeSlot(deleteLocseeSlotId);
   });
 
   document.addEventListener("change", event => {
@@ -330,6 +415,7 @@ function renderAll() {
   renderStaff();
   renderSchedule();
   renderOt();
+  renderLocsee();
   renderDashboard();
   renderDateLabels();
   updateOtLiveTotal();
@@ -446,7 +532,7 @@ function renderBars(items, suffix = "") {
 }
 
 function buildUpcomingEvents(date) {
-  const start = new Date(`${date}T00:00:00`);
+  const start = parseLocalDate(date);
   const end = new Date(start);
   end.setDate(end.getDate() + 14);
   const rows = [];
@@ -460,6 +546,12 @@ function buildUpcomingEvents(date) {
         detail: formatDisplayDate(dateText)
       }));
   }
+  visibleLocseeRequests()
+    .filter(item => item.status === "approved" && item.startDate <= iso(end) && item.endDate >= iso(start))
+    .forEach(item => rows.push({
+      title: `${leaveTypeLabel(item.type)} · ${item.staffName}`,
+      detail: `${formatDisplayDate(item.startDate)} - ${formatDisplayDate(item.endDate)}`
+    }));
   return rows.slice(0, 8);
 }
 
@@ -604,9 +696,11 @@ function deleteStaff(id) {
     if (key.includes(`|${id}|`)) delete schedule[key];
   });
   otRecords = otRecords.filter(item => item.staffId !== id);
+  locseeRequests = locseeRequests.filter(item => item.staffId !== id);
   writeStore(STORE.staff, staff);
   writeStore(STORE.schedule, schedule);
   writeStore(STORE.ot, otRecords);
+  writeStore(STORE.locsee, locseeRequests);
   renderAll();
 }
 
@@ -629,6 +723,11 @@ function populateStaffOptions() {
   const options = sorted.map(person => `<option value="${person.id}">${escapeHtml(person.name)} (${escapeHtml(person.role)})</option>`).join("");
   el.otFilterStaff.innerHTML = `<option value="">ทั้งหมด</option>${options}`;
   el.vacationCreditStaff.innerHTML = options;
+  const locseeOptions = canManageLeaveRequests()
+    ? options
+    : sorted.filter(person => person.id === currentUserId).map(person => `<option value="${person.id}">${escapeHtml(person.name)} (${escapeHtml(person.role)})</option>`).join("");
+  el.locseeStaff.innerHTML = locseeOptions || options;
+  if (currentUserId && !canManageLeaveRequests()) el.locseeStaff.value = currentUserId;
   el.otApprover.innerHTML = `<option value="">ให้ระบบเลือก / หัวหน้าตรวจ</option>${sorted
     .filter(person => canApproveOt(person))
     .map(person => `<option value="${person.id}">${escapeHtml(person.name)} (${escapeHtml(person.role)})</option>`)
@@ -647,27 +746,34 @@ function renderSchedule() {
   renderScheduleKpis(days);
   renderScheduleSidePanel(days);
   const dayHeaders = days.map(date => {
-    const dateObj = new Date(`${date}T00:00:00`);
-    const staffing = staffingForDate(date);
+    const dateObj = parseLocalDate(date);
     const holiday = holidayName(date);
-    const holidayTag = holiday ? `<b class="day-holiday">${escapeHtml(holiday)}</b>` : "";
-    return `<div class="schedule-cell day-head ${dayClass(date)}"${holiday ? ` title="${escapeHtml(holiday)}"` : ""}>${dateObj.getDate()}<br><small>${thaiDay(dateObj)}</small>${holidayTag}<em class="${staffing.status}">RN ${staffing.rn}/${staffing.rnTarget}<br>PN ${staffing.pn}/${staffing.pnTarget}</em></div>`;
+    const holidayTag = holiday ? `<b class="day-holiday">วันหยุด</b>` : "";
+    const todayTag = date === iso(new Date()) ? `<b class="today-chip">วันนี้</b>` : "";
+    return `<div class="schedule-cell day-head ${dayClass(date)}"${holiday ? ` title="${escapeHtml(holiday)}"` : ""}>${dateObj.getDate()}<br><small>${thaiDay(dateObj)}</small>${todayTag}${holidayTag}</div>`;
   }).join("");
 
-  const rows = people.map(person => `
-    <div class="schedule-cell name"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.role)}</small></div>
-      ${days.map(date => scheduleInputCell(person, date, disabled)).join("")}
-  `).join("");
+  let previousPosition = "";
+  const rows = people.map(person => {
+    const position = schedulePositionGroupLabel(person.role);
+    const positionLabel = position !== previousPosition ? `<small class="schedule-position-label">${escapeHtml(position)}</small>` : "";
+    previousPosition = position;
+    return `
+      <div class="schedule-cell name">${positionLabel}<strong>${escapeHtml(person.name)}</strong></div>
+        ${days.map(date => scheduleInputCell(person, date, disabled)).join("")}
+    `;
+  }).join("");
 
   const summaryRows = summaryCodesForGroup(activeScheduleGroup).map(code => `
     <div class="schedule-cell summary-label">${code}</div>
     ${days.map(date => `<div class="schedule-cell summary-cell ${dayClass(date)}">${countShiftCode(date, code, people)}</div>`).join("")}
   `).join("");
 
+  const tableWidth = 195 + (days.length * 48);
   el.scheduleTable.innerHTML = `
-    <div class="schedule-month-banner">${activeScheduleGroup} · ${formatMonthTitle(el.scheduleMonth.value)}</div>
-    <div class="schedule-grid" style="--days:${days.length}">
-      <div class="schedule-cell head">เจ้าหน้าที่</div>
+    <div class="schedule-month-banner" style="--days:${days.length};--table-width:${tableWidth}px">${formatMonthTitle(el.scheduleMonth.value)}</div>
+    <div class="schedule-grid" style="--days:${days.length};--table-width:${tableWidth}px">
+      <div class="schedule-cell head diagonal-head"><span>เจ้าหน้าที่</span><b>วันที่</b></div>
       ${dayHeaders}
       ${rows || `<div class="schedule-cell name">ยังไม่มีรายชื่อ ${activeScheduleGroup}</div>${days.map(() => `<div class="schedule-cell"></div>`).join("")}`}
       ${summaryRows}
@@ -753,7 +859,7 @@ function upcomingScheduleItems(days, code) {
 }
 
 function dayClass(date) {
-  const day = new Date(`${date}T00:00:00`).getDay();
+  const day = parseLocalDate(date).getDay();
   const classes = [];
   if (date === iso(new Date())) classes.push("today");
   if (isHoliday(date)) classes.push("holiday");
@@ -866,7 +972,7 @@ function renderOt() {
     const status = otStatus(item);
     return `
       <article class="ot-timeline-item">
-        <div class="ot-date-dot"><strong>${new Date(`${item.date}T00:00:00`).getDate()}</strong><span>${thaiMonthShort(item.date)}</span></div>
+        <div class="ot-date-dot"><strong>${parseLocalDate(item.date).getDate()}</strong><span>${thaiMonthShort(item.date)}</span></div>
         <div class="ot-record-main">
           <div>
             <strong>${escapeHtml(item.staffName)}</strong>
@@ -1020,7 +1126,7 @@ function otStatus(item) {
 }
 
 function thaiMonthShort(dateText) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { month: "short" }).format(new Date(`${dateText}T00:00:00`));
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { month: "short" }).format(parseLocalDate(dateText));
 }
 
 function updateOtLiveTotal() {
@@ -1188,6 +1294,742 @@ function deleteOtRecord(id) {
   renderAll();
 }
 
+function saveLocseeRequest(event) {
+  event.preventDefault();
+  const staffPerson = staff.find(item => item.id === el.locseeStaff.value);
+  if (!staffPerson) return;
+  if (!canManageLeaveRequests() && staffPerson.id !== currentUserId) {
+    alert("บัญชีนี้ส่งคำขอลาแทนผู้อื่นไม่ได้");
+    return;
+  }
+  if (el.locseeEndDate.value < el.locseeStartDate.value) {
+    alert("End Date ต้องไม่ก่อน Start Date");
+    return;
+  }
+
+  const id = el.locseeRequestId.value || crypto.randomUUID();
+  const previous = locseeRequests.find(item => item.id === id);
+  const now = iso(new Date());
+  const request = {
+    id,
+    staffId: staffPerson.id,
+    staffName: staffPerson.name,
+    role: staffPerson.role,
+    startDate: el.locseeStartDate.value,
+    endDate: el.locseeEndDate.value,
+    type: el.locseeType.value,
+    priority: el.locseePriority.value,
+    note: el.locseeNote.value.trim(),
+    status: previous?.status || "pending",
+    syncedAt: previous?.syncedAt || "",
+    requestedBy: previous?.requestedBy || currentUser()?.name || staffPerson.name,
+    requestedAt: previous?.requestedAt || now,
+    decidedBy: previous?.decidedBy || "",
+    decidedAt: previous?.decidedAt || ""
+  };
+
+  const index = locseeRequests.findIndex(item => item.id === id);
+  if (index >= 0) locseeRequests[index] = request;
+  else locseeRequests.unshift(request);
+  writeStore(STORE.locsee, locseeRequests);
+  clearLocseeForm();
+  renderAll();
+}
+
+function renderLocsee() {
+  if (!el.locseeRows) return;
+  renderLocseeImpact();
+  renderLocseeKpis();
+  renderLocseeCalendar();
+  renderLocseeRows();
+  renderLocseeVacationTable();
+  renderLocseeSlots();
+}
+
+function renderLocseeKpis() {
+  const monthRows = locseeRequestsForMonth(el.locseeMonth.value);
+  el.locseePendingKpi.textContent = monthRows.filter(item => item.status === "pending").length;
+  el.locseeApprovedKpi.textContent = monthRows.filter(item => item.status === "approved").length;
+  el.locseeUsedKpi.textContent = monthRows
+    .filter(item => item.status === "approved")
+    .reduce((total, item) => total + leaveDates(item).filter(date => date.startsWith(el.locseeMonth.value)).length, 0);
+  el.locseeSyncedKpi.textContent = monthRows.filter(item => item.syncedAt).length;
+}
+
+function renderLocseeImpact() {
+  if (!el.locseeImpact || !el.locseeStaff.value || !el.locseeStartDate.value || !el.locseeEndDate.value) return;
+  if (el.locseeEndDate.value < el.locseeStartDate.value) {
+    el.locseeImpact.innerHTML = `<strong>Date range needs attention</strong><small>End Date must be the same as or after Start Date.</small>`;
+    return;
+  }
+  const dates = dateRange(el.locseeStartDate.value, el.locseeEndDate.value);
+  const person = staff.find(item => item.id === el.locseeStaff.value);
+  const busy = dates
+    .map(date => ({ date, code: getScheduleValue(date.slice(0, 7), el.locseeStaff.value, date) }))
+    .filter(item => item.code);
+  const approvedUsed = approvedLeaveDaysForStaff(el.locseeStaff.value, el.locseeRequestId.value);
+  const entitlement = Number(person?.leaveEntitlement || 0);
+  const remaining = Math.max(0, entitlement - approvedUsed);
+  el.locseeImpact.innerHTML = `
+    <strong>${dates.length} day${dates.length > 1 ? "s" : ""} requested</strong>
+    <small>Leave balance: ${remaining}/${entitlement} days · Schedule conflicts: ${busy.length}</small>
+    ${busy.length ? `<div class="locsee-conflicts">${busy.map(item => `<span>${formatShortDate(item.date)} · ${escapeHtml(item.code)}</span>`).join("")}</div>` : ""}
+  `;
+}
+
+function renderLocseeCalendar() {
+  const days = daysInMonth(el.locseeMonth.value);
+  const approved = visibleLocseeRequests()
+    .filter(item => item.status === "approved")
+    .flatMap(item => leaveDates(item).map(date => ({ ...item, date })))
+    .filter(item => item.date.startsWith(el.locseeMonth.value));
+
+  el.locseeCalendar.innerHTML = days.map(date => {
+    const rows = approved.filter(item => item.date === date);
+    const labels = rows.slice(0, 2).map(item => `<b>${escapeHtml(item.staffName)}</b>`).join("");
+    return `
+      <div class="locsee-day ${dayClass(date)} ${rows.length ? "has-leave" : ""}">
+        <span>${parseLocalDate(date).getDate()}</span>
+        ${labels}
+        ${rows.length > 2 ? `<em>+${rows.length - 2}</em>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  const upcoming = visibleLocseeRequests()
+    .filter(item => item.status === "approved" && item.endDate >= iso(new Date()))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .slice(0, 5);
+  el.locseeUpcoming.innerHTML = upcoming.length
+    ? upcoming.map(item => listItem(`${leaveTypeLabel(item.type)} · ${item.staffName}`, `${formatDisplayDate(item.startDate)} - ${formatDisplayDate(item.endDate)}`)).join("")
+    : emptyItem("No approved leave coming up");
+}
+
+function renderLocseeRows() {
+  const status = el.locseeStatusFilter.value;
+  const rows = locseeRequestsForMonth(el.locseeMonth.value)
+    .filter(item => !status || item.status === status)
+    .sort((a, b) => statusRank(a.status) - statusRank(b.status) || a.startDate.localeCompare(b.startDate));
+
+  el.locseeRows.innerHTML = rows.map(item => {
+    const dates = leaveDates(item);
+    const conflicts = dates.filter(date => getScheduleValue(date.slice(0, 7), item.staffId, date));
+    return `
+      <article class="locsee-row">
+        <div class="locsee-row-main">
+          <strong>${escapeHtml(item.staffName)}</strong>
+          <span>${escapeHtml(leaveTypeLabel(item.type))} · ${formatDisplayDate(item.startDate)} - ${formatDisplayDate(item.endDate)}</span>
+          <small>${dates.length} day${dates.length > 1 ? "s" : ""} · ${escapeHtml(item.priority)} priority${conflicts.length ? ` · ${conflicts.length} schedule conflict(s)` : ""}</small>
+          ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}
+        </div>
+        <div class="locsee-row-status">
+          <span class="status-pill ${item.status === "approved" ? "done" : ""}">${escapeHtml(item.status)}</span>
+          ${item.syncedAt ? `<small>Synced ${formatDisplayDate(item.syncedAt)}</small>` : ""}
+        </div>
+        <div class="locsee-row-actions">
+          ${canEditLeaveRequest(item) ? `<button class="btn small" type="button" data-edit-locsee="${item.id}">Edit</button>` : ""}
+          ${canManageLeaveRequests() && item.status !== "approved" ? `<button class="btn small primary" type="button" data-approve-locsee="${item.id}">Approve</button>` : ""}
+          ${canManageLeaveRequests() && item.status !== "rejected" ? `<button class="btn small" type="button" data-reject-locsee="${item.id}">Reject</button>` : ""}
+          ${canManageLeaveRequests() && item.status === "approved" ? `<button class="btn small" type="button" data-sync-locsee="${item.id}">Sync</button>` : ""}
+          ${canDeleteLeaveRequest(item) ? `<button class="btn small danger" type="button" data-delete-locsee="${item.id}">Delete</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="ot-empty"><strong>No LOCSee requests</strong><small>Submit a leave request to start building the master calendar.</small></div>`;
+}
+
+function renderLocseeVacationTable() {
+  if (!el.locseeVacationGrid) return;
+  const months = locseeFiscalMonths(el.locseeMonth.value);
+  const fiscalBe = months[11].year + 543;
+  const sourceLabel = locseeCloudEnabled ? (locseeCloudLoaded ? "Online/Supabase" : "Supabase not loaded") : "Local only";
+  el.locseeVacationYearLabel.textContent = `${sourceLabel} · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
+  el.locseeVacationGrid.innerHTML = months.map(month => locseeVacationMonthCard(month)).join("");
+}
+
+function locseeVacationMonthCard(monthInfo) {
+  const monthValue = `${monthInfo.year}-${String(monthInfo.month).padStart(2, "0")}`;
+  const days = daysInMonth(monthValue);
+  const firstOffset = parseLocalDate(days[0]).getDay();
+  const blankCells = Array.from({ length: firstOffset }, () => `<div class="locsee-vac-day is-empty"></div>`).join("");
+  const dayCells = days.map(date => locseeVacationDayCell(date)).join("");
+  return `
+    <section class="locsee-vac-month">
+      <h4>${formatMonthTitle(monthValue)}</h4>
+      <div class="locsee-vac-weekdays">
+        ${["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map(day => `<span>${day}</span>`).join("")}
+      </div>
+      <div class="locsee-vac-days">${blankCells}${dayCells}</div>
+    </section>
+  `;
+}
+
+function locseeVacationDayCell(date) {
+  const slots = locseeSlotsForDate(date);
+  const winners = uniqueNames(slots.flatMap(slotWinners));
+  const bookingTotal = slots.reduce((total, slot) => total + bookingsForSlot(slot.id).length, 0);
+  const holiday = holidayName(date);
+  const classes = [
+    "locsee-vac-day",
+    isWeekend(date) ? "is-weekend" : "",
+    holiday ? "is-holiday" : "",
+    slots.length ? "has-slot" : "",
+    winners.length ? "has-winner" : ""
+  ].filter(Boolean).join(" ");
+  const title = [
+    formatDisplayDate(date),
+    holiday,
+    slots.length ? slots.map(slot => `${slot.label || slotDateLabel(slot)} (${bookingsForSlot(slot.id).length})`).join(" / ") : "",
+    winners.length ? `Winner: ${winners.join(", ")}` : ""
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="${classes}" title="${escapeHtml(title)}">
+      <span>${parseLocalDate(date).getDate()}</span>
+      ${bookingTotal ? `<small>${bookingTotal} จอง</small>` : ""}
+      ${winners.length ? `<b>${escapeHtml(winners.slice(0, 2).join(", "))}</b>` : ""}
+    </div>
+  `;
+}
+
+function editLocseeRequest(id) {
+  const request = locseeRequests.find(item => item.id === id);
+  if (!request || !canEditLeaveRequest(request)) {
+    alert("บัญชีนี้ไม่มีสิทธิ์แก้คำขอลานี้");
+    return;
+  }
+  el.locseeRequestId.value = request.id;
+  el.locseeStaff.value = request.staffId;
+  el.locseeStartDate.value = request.startDate;
+  el.locseeEndDate.value = request.endDate;
+  el.locseeType.value = request.type;
+  el.locseePriority.value = request.priority;
+  el.locseeNote.value = request.note || "";
+  el.locseeFormMode.textContent = "Editing";
+  renderLocseeImpact();
+  setTab("locsee");
+  el.locseeStartDate.focus();
+}
+
+function approveLocseeRequest(id) {
+  if (!canManageLeaveRequests()) {
+    alert("บัญชีนี้ไม่มีสิทธิ์อนุมัติคำขอลา");
+    return;
+  }
+  const request = locseeRequests.find(item => item.id === id);
+  if (!request) return;
+  request.status = "approved";
+  request.decidedBy = currentUser()?.name || "Approver";
+  request.decidedAt = iso(new Date());
+  writeStore(STORE.locsee, locseeRequests);
+  renderAll();
+}
+
+function rejectLocseeRequest(id) {
+  if (!canManageLeaveRequests()) {
+    alert("บัญชีนี้ไม่มีสิทธิ์ปฏิเสธคำขอลา");
+    return;
+  }
+  const request = locseeRequests.find(item => item.id === id);
+  if (!request) return;
+  request.status = "rejected";
+  request.decidedBy = currentUser()?.name || "Approver";
+  request.decidedAt = iso(new Date());
+  writeStore(STORE.locsee, locseeRequests);
+  renderAll();
+}
+
+function syncLocseeRequest(id) {
+  if (!canManageLeaveRequests()) {
+    alert("บัญชีนี้ไม่มีสิทธิ์ sync คำขอลา");
+    return;
+  }
+  const request = locseeRequests.find(item => item.id === id);
+  if (!request || request.status !== "approved") return;
+  leaveDates(request).forEach(date => {
+    setScheduleValue(date.slice(0, 7), request.staffId, date, scheduleCodeForLeaveType(request.type));
+  });
+  request.syncedAt = iso(new Date());
+  writeStore(STORE.locsee, locseeRequests);
+  renderAll();
+}
+
+function deleteLocseeRequest(id) {
+  const request = locseeRequests.find(item => item.id === id);
+  if (!request || !canDeleteLeaveRequest(request)) {
+    alert("บัญชีนี้ไม่มีสิทธิ์ลบคำขอลานี้");
+    return;
+  }
+  if (!confirm(`Delete leave request for ${request.staffName}?`)) return;
+  locseeRequests = locseeRequests.filter(item => item.id !== id);
+  writeStore(STORE.locsee, locseeRequests);
+  renderAll();
+}
+
+function clearLocseeForm() {
+  el.locseeRequestId.value = "";
+  const canSelectCurrentUser = [...el.locseeStaff.options].some(option => option.value === currentUserId);
+  if (canSelectCurrentUser) el.locseeStaff.value = currentUserId;
+  else if (el.locseeStaff.options.length) el.locseeStaff.value = el.locseeStaff.options[0].value;
+  const today = iso(new Date());
+  el.locseeStartDate.value = today;
+  el.locseeEndDate.value = today;
+  el.locseeType.value = "annual";
+  el.locseePriority.value = "normal";
+  el.locseeNote.value = "";
+  el.locseeFormMode.textContent = "Draft";
+  renderLocseeImpact();
+}
+
+function visibleLocseeRequests() {
+  if (canManageLeaveRequests()) return [...locseeRequests];
+  return locseeRequests.filter(item => item.staffId === currentUserId);
+}
+
+function locseeRequestsForMonth(month) {
+  return visibleLocseeRequests().filter(item => item.startDate.slice(0, 7) <= month && item.endDate.slice(0, 7) >= month);
+}
+
+function leaveDates(request) {
+  return dateRange(request.startDate, request.endDate);
+}
+
+function dateRange(startDate, endDate) {
+  const rows = [];
+  for (let day = parseLocalDate(startDate); day <= parseLocalDate(endDate); day.setDate(day.getDate() + 1)) {
+    rows.push(iso(day));
+  }
+  return rows;
+}
+
+function approvedLeaveDaysForStaff(staffId, excludeId = "") {
+  return locseeRequests
+    .filter(item => item.staffId === staffId && item.id !== excludeId && item.status === "approved")
+    .reduce((total, item) => total + leaveDates(item).length, 0);
+}
+
+function scheduleCodeForLeaveType(type) {
+  if (type === "study") return SHIFT_CODES[9];
+  if (type === "training") return SHIFT_CODES[10];
+  if (type === "meeting") return SHIFT_CODES[11];
+  return "vac";
+}
+
+function leaveTypeLabel(type) {
+  return ({ annual: "Vacation", personal: "Personal Leave", sick: "Sick Leave", study: "Study Leave", training: "Training", meeting: "Meeting" })[type] || "Leave";
+}
+
+function statusRank(status) {
+  return ({ pending: 0, approved: 1, rejected: 2 })[status] ?? 9;
+}
+
+function initLocseeSupabase() {
+  const config = window.SHIFTMATE_CONFIG || {};
+  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return;
+  locseeDb = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  locseeCloudEnabled = true;
+}
+
+async function loadLocseeCloudData() {
+  if (!locseeDb) return false;
+  try {
+    const [slotRes, bookingRes, holidayRes] = await Promise.all([
+      locseeDb.from("loc_slots").select("*").order("start_date", { ascending: true }),
+      locseeDb.from("loc_bookings").select("*").order("created_at", { ascending: true }),
+      locseeDb.from("special_holidays").select("*").order("holiday_date", { ascending: true })
+    ]);
+    if (slotRes.error) throw slotRes.error;
+    if (bookingRes.error) throw bookingRes.error;
+    if (holidayRes.error) throw holidayRes.error;
+    locseeSlots = slotRes.data || [];
+    locseeBookings = bookingRes.data || [];
+    locseeSpecialHolidays = holidayRes.data || [];
+    locseeCloudLoaded = true;
+    writeLocseeBookingStore();
+    renderAll();
+    return true;
+  } catch (error) {
+    console.warn("LOCSee Supabase load failed", error);
+    locseeCloudLoaded = false;
+    renderAll();
+    return false;
+  }
+}
+
+async function createLocseeSlotCloud(slot, bookingRows) {
+  if (!locseeDb) return false;
+  try {
+    const { error: slotError } = await locseeDb.from("loc_slots").insert(locseeSlotCloudRow(slot));
+    if (slotError) throw slotError;
+    if (bookingRows.length) {
+      const { error: bookingError } = await locseeDb.from("loc_bookings").insert(bookingRows.map(locseeBookingCloudRow));
+      if (bookingError) throw bookingError;
+    }
+    await loadLocseeCloudData();
+    return true;
+  } catch (error) {
+    return handleLocseeCloudWriteError(error);
+  }
+}
+
+async function insertLocseeBookingCloud(row) {
+  if (!locseeDb) return false;
+  try {
+    const { error } = await locseeDb.from("loc_bookings").insert(locseeBookingCloudRow(row));
+    if (error) throw error;
+    await loadLocseeCloudData();
+    return true;
+  } catch (error) {
+    return handleLocseeCloudWriteError(error);
+  }
+}
+
+async function updateLocseeSlotCloud(id, patch) {
+  if (!locseeDb) return false;
+  try {
+    const { error } = await locseeDb.from("loc_slots").update(patch).eq("id", id);
+    if (error) throw error;
+    await loadLocseeCloudData();
+    return true;
+  } catch (error) {
+    return handleLocseeCloudWriteError(error);
+  }
+}
+
+async function deleteLocseeSlotCloud(id) {
+  if (!locseeDb) return false;
+  try {
+    const { error: bookingError } = await locseeDb.from("loc_bookings").delete().eq("slot_id", id);
+    if (bookingError) throw bookingError;
+    const { error: slotError } = await locseeDb.from("loc_slots").delete().eq("id", id);
+    if (slotError) throw slotError;
+    await loadLocseeCloudData();
+    return true;
+  } catch (error) {
+    return handleLocseeCloudWriteError(error);
+  }
+}
+
+function locseeSlotCloudRow(slot) {
+  return {
+    id: slot.id,
+    label: slot.label || "",
+    start_date: slotStartDate(slot),
+    end_date: slotEndDate(slot),
+    status: slot.status || "open",
+    winner_name: slot.winner_name || null,
+    leave_days: slotLeaveDays(slot),
+    created_at: slot.created_at || new Date().toISOString(),
+    synced_at: slot.synced_at || null
+  };
+}
+
+function locseeBookingCloudRow(row) {
+  return {
+    id: row.id,
+    slot_id: row.slot_id || row.slotId,
+    person_name: row.person_name || row.personName || "",
+    leave_days: clampNumber(Number(row.leave_days || row.leaveDays || 1), 1, 5),
+    created_at: row.created_at || new Date().toISOString()
+  };
+}
+
+function handleLocseeCloudWriteError(error) {
+  console.warn("LOCSee Supabase write failed", error);
+  locseeCloudLoaded = false;
+  alert("บันทึก LOCSee ไป Supabase ไม่สำเร็จ ระบบจะเก็บไว้ในเครื่องก่อน กรุณาเช็คว่ารัน SQL ตาราง LOCSee แล้ว");
+  renderAll();
+  return false;
+}
+
+async function saveLocseeSlot(event) {
+  event.preventDefault();
+  if (!canManageLeaveRequests()) {
+    alert("This account cannot manage LOC booking slots.");
+    return;
+  }
+  const startDate = el.locseeSlotStart.value;
+  const leaveDays = clampNumber(Number(el.locseeSlotDays.value || 1), 1, 5);
+  if (!startDate) return;
+  const dates = locseeBusinessDates(startDate, leaveDays);
+  if (!dates.length) return;
+  const slot = {
+    id: crypto.randomUUID(),
+    label: defaultLocseeSlotLabel(startDate, leaveDays),
+    start_date: dates[0],
+    end_date: dates[dates.length - 1],
+    status: "open",
+    winner_name: "",
+    leave_days: leaveDays,
+    created_at: new Date().toISOString()
+  };
+  const names = parseNameList(el.locseeSlotNames.value);
+  const bookingRows = names.map(name => ({
+      id: crypto.randomUUID(),
+      slot_id: slot.id,
+      person_name: name,
+      leave_days: leaveDays,
+      created_at: new Date().toISOString()
+  }));
+  const savedOnline = await createLocseeSlotCloud(slot, bookingRows);
+  if (!savedOnline) {
+    locseeSlots.unshift(slot);
+    locseeBookings.unshift(...bookingRows);
+    writeLocseeBookingStore();
+  }
+  el.locseeSlotNames.value = "";
+  renderAll();
+}
+
+async function saveLocseeBooking(event) {
+  event.preventDefault();
+  const slot = locseeSlots.find(item => item.id === el.locseeBookingSlot.value);
+  const name = el.locseeBookingName.value.trim();
+  if (!slot || !name) return;
+  if (slot.status === "drawn") {
+    alert("This LOC slot already has a winner. Reopen it before adding bookings.");
+    return;
+  }
+  const exists = locseeBookings.some(item => item.slot_id === slot.id && normalizeName(item.person_name) === normalizeName(name));
+  if (exists) {
+    alert("This name is already booked in the selected LOC slot.");
+    return;
+  }
+  const row = {
+    id: crypto.randomUUID(),
+    slot_id: slot.id,
+    person_name: name,
+    leave_days: slotLeaveDays(slot),
+    created_at: new Date().toISOString()
+  };
+  const savedOnline = await insertLocseeBookingCloud(row);
+  if (!savedOnline) {
+    locseeBookings.unshift(row);
+    writeLocseeBookingStore();
+  }
+  el.locseeBookingName.value = "";
+  renderAll();
+}
+
+function renderLocseeSlots() {
+  if (!el.locseeSlotRows) return;
+  const month = el.locseeMonth.value;
+  const visibleSlots = locseeSlots
+    .filter(slot => slotMonthIntersects(slot, month))
+    .sort((a, b) => slotStartDate(a).localeCompare(slotStartDate(b)));
+  const openSlots = locseeSlots
+    .filter(slot => slot.status !== "drawn")
+    .sort((a, b) => slotStartDate(a).localeCompare(slotStartDate(b)));
+
+  el.locseeBookingSlot.innerHTML = openSlots.length
+    ? openSlots.map(slot => `<option value="${slot.id}">${escapeHtml(slot.label || slotDateLabel(slot))}</option>`).join("")
+    : `<option value="">No open LOC slot</option>`;
+  el.locseeBookingForm.querySelector("button[type='submit']").disabled = !openSlots.length;
+
+  el.locseeSlotRows.innerHTML = visibleSlots.map(slot => {
+    const bookings = bookingsForSlot(slot.id);
+    const winners = slotWinners(slot);
+    const canDraw = canManageLeaveRequests() && bookings.length && slot.status !== "drawn";
+    const canSync = canManageLeaveRequests() && winners.length;
+    return `
+      <article class="locsee-slot-row">
+        <div class="locsee-slot-main">
+          <strong>${escapeHtml(slot.label || slotDateLabel(slot))}</strong>
+          <span>${slotDateLabel(slot)} · ${slotLeaveDays(slot)} day${slotLeaveDays(slot) > 1 ? "s" : ""}</span>
+          <small>${bookings.length} booking${bookings.length === 1 ? "" : "s"}${winners.length ? ` · winner: ${escapeHtml(winners.join(", "))}` : ""}</small>
+          <div class="locsee-chip-list">
+            ${bookings.map(item => `<span>${escapeHtml(item.person_name || item.personName || "")}</span>`).join("") || "<em>No bookings yet</em>"}
+          </div>
+        </div>
+        <div class="locsee-row-status">
+          <span class="status-pill ${slot.status === "drawn" ? "done" : ""}">${escapeHtml(slot.status || "open")}</span>
+          ${slot.synced_at ? `<small>Synced ${formatDisplayDate(String(slot.synced_at).slice(0, 10))}</small>` : ""}
+        </div>
+        <div class="locsee-row-actions">
+          ${canDraw ? `<button class="btn small primary" type="button" data-draw-locsee-slot="${slot.id}">Draw</button>` : ""}
+          ${canSync ? `<button class="btn small" type="button" data-sync-locsee-slot="${slot.id}">Sync</button>` : ""}
+          ${canManageLeaveRequests() && slot.status === "drawn" ? `<button class="btn small" type="button" data-reopen-locsee-slot="${slot.id}">Reopen</button>` : ""}
+          ${canManageLeaveRequests() ? `<button class="btn small danger" type="button" data-delete-locsee-slot="${slot.id}">Delete</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="ot-empty"><strong>No LOC booking slots</strong><small>Create a slot or select another month.</small></div>`;
+}
+
+async function drawLocseeSlot(id) {
+  if (!canManageLeaveRequests()) return;
+  const slot = locseeSlots.find(item => item.id === id);
+  const bookings = bookingsForSlot(id);
+  if (!slot || !bookings.length) return;
+  const winner = bookings[Math.floor(Math.random() * bookings.length)];
+  slot.status = "drawn";
+  slot.winner_name = winner.person_name || winner.personName || "";
+  slot.drawn_at = new Date().toISOString();
+  const savedOnline = await updateLocseeSlotCloud(slot.id, { status: slot.status, winner_name: slot.winner_name });
+  if (!savedOnline) writeLocseeBookingStore();
+  renderAll();
+}
+
+async function syncLocseeSlot(id) {
+  if (!canManageLeaveRequests()) return;
+  const slot = locseeSlots.find(item => item.id === id);
+  if (!slot) return;
+  const winners = slotWinners(slot);
+  if (!winners.length) return;
+  const dates = locseeBusinessDates(slotStartDate(slot), slotLeaveDays(slot));
+  const missing = [];
+  winners.forEach(name => {
+    const person = findStaffByName(name);
+    if (!person) {
+      missing.push(name);
+      return;
+    }
+    dates.forEach(date => setScheduleValue(date.slice(0, 7), person.id, date, "vac"));
+  });
+  const syncedAt = new Date().toISOString();
+  slot.synced_at = syncedAt;
+  const savedOnline = await updateLocseeSlotCloud(slot.id, { synced_at: syncedAt });
+  if (!savedOnline) writeLocseeBookingStore();
+  renderAll();
+  if (missing.length) alert(`Synced matched winners. Not found in Staff: ${missing.join(", ")}`);
+}
+
+async function reopenLocseeSlot(id) {
+  if (!canManageLeaveRequests()) return;
+  const slot = locseeSlots.find(item => item.id === id);
+  if (!slot) return;
+  slot.status = "open";
+  slot.winner_name = "";
+  slot.drawn_at = "";
+  slot.synced_at = "";
+  const savedOnline = await updateLocseeSlotCloud(slot.id, { status: "open", winner_name: null });
+  if (!savedOnline) writeLocseeBookingStore();
+  renderAll();
+}
+
+async function deleteLocseeSlot(id) {
+  if (!canManageLeaveRequests()) return;
+  const slot = locseeSlots.find(item => item.id === id);
+  if (!slot || !confirm(`Delete LOC slot ${slot.label || slotDateLabel(slot)}?`)) return;
+  const deletedOnline = await deleteLocseeSlotCloud(id);
+  locseeSlots = locseeSlots.filter(item => item.id !== id);
+  locseeBookings = locseeBookings.filter(item => item.slot_id !== id && item.slotId !== id);
+  if (!deletedOnline) writeLocseeBookingStore();
+  renderAll();
+}
+
+function writeLocseeBookingStore() {
+  writeStore(STORE.locseeSlots, locseeSlots);
+  writeStore(STORE.locseeBookings, locseeBookings);
+  writeStore(STORE.locseeHolidays, locseeSpecialHolidays);
+}
+
+function bookingsForSlot(slotId) {
+  return locseeBookings.filter(item => item.slot_id === slotId || item.slotId === slotId);
+}
+
+function slotStartDate(slot) {
+  return slot.start_date || slot.startDate || "";
+}
+
+function slotEndDate(slot) {
+  return slot.end_date || slot.endDate || slotStartDate(slot);
+}
+
+function slotLeaveDays(slot) {
+  return clampNumber(Number(slot.leave_days || slot.leaveDays || 1), 1, 5);
+}
+
+function slotWinners(slot) {
+  const raw = slot.winner_name || slot.winnerName || "";
+  return String(raw).split(/[,;\n]/).map(item => item.trim()).filter(Boolean);
+}
+
+function slotDateLabel(slot) {
+  const start = slotStartDate(slot);
+  const end = slotEndDate(slot);
+  if (!start) return "LOC slot";
+  return start === end ? formatDisplayDate(start) : `${formatDisplayDate(start)} - ${formatDisplayDate(end)}`;
+}
+
+function slotMonthIntersects(slot, month) {
+  const start = slotStartDate(slot);
+  const end = slotEndDate(slot);
+  return start.slice(0, 7) <= month && end.slice(0, 7) >= month;
+}
+
+function locseeSlotsForDate(dateText) {
+  return locseeSlots.filter(slot => slotStartDate(slot) <= dateText && slotEndDate(slot) >= dateText);
+}
+
+function locseeFiscalMonths(monthValue) {
+  const [selectedYear, selectedMonth] = monthValue.split("-").map(Number);
+  const fiscalEndYear = selectedMonth >= 10 ? selectedYear + 1 : selectedYear;
+  const startYear = fiscalEndYear - 1;
+  return [
+    { year: startYear, month: 10 },
+    { year: startYear, month: 11 },
+    { year: startYear, month: 12 },
+    { year: fiscalEndYear, month: 1 },
+    { year: fiscalEndYear, month: 2 },
+    { year: fiscalEndYear, month: 3 },
+    { year: fiscalEndYear, month: 4 },
+    { year: fiscalEndYear, month: 5 },
+    { year: fiscalEndYear, month: 6 },
+    { year: fiscalEndYear, month: 7 },
+    { year: fiscalEndYear, month: 8 },
+    { year: fiscalEndYear, month: 9 }
+  ];
+}
+
+function defaultLocseeSlotLabel(startDate, leaveDays) {
+  return `LOC ${formatDisplayDate(startDate)} · ${leaveDays} day${leaveDays > 1 ? "s" : ""}`;
+}
+
+function locseeBusinessDates(startDate, count) {
+  const dates = [];
+  const day = parseLocalDate(startDate);
+  while (dates.length < count) {
+    const text = iso(day);
+    if (isLocseeBusinessDay(text)) dates.push(text);
+    day.setDate(day.getDate() + 1);
+  }
+  return dates;
+}
+
+function isLocseeBusinessDay(dateText) {
+  const day = parseLocalDate(dateText).getDay();
+  if (day === 0 || day === 6) return false;
+  if (isHoliday(dateText)) return false;
+  return !locseeSpecialHolidays.some(item => (item.holiday_date || item.date || "").slice(0, 10) === dateText);
+}
+
+function parseNameList(text) {
+  return text.split(/[\n,;]/).map(item => item.trim()).filter(Boolean);
+}
+
+function findStaffByName(name) {
+  const target = normalizeName(name);
+  return staff.find(item => normalizeName(item.name) === target || normalizeName(item.username) === target);
+}
+
+function uniqueNames(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = normalizeName(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeName(name) {
+  return String(name || "").replace(/\s+/g, "").toLowerCase();
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
 function calculateOt(start, end, deductMinutes = 0) {
   if (!start || !end) return { hours: 0, minutes: 0 };
   const startMinutes = toMinutes(start);
@@ -1213,7 +2055,7 @@ function daysInMonth(monthValue) {
 }
 
 function isWeekend(dateText) {
-  const day = new Date(`${dateText}T00:00:00`).getDay();
+  const day = parseLocalDate(dateText).getDay();
   return day === 0 || day === 6;
 }
 
@@ -1222,15 +2064,15 @@ function thaiDay(date) {
 }
 
 function formatLongDate(dateText) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${dateText}T00:00:00`));
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(parseLocalDate(dateText));
 }
 
 function formatShortDate(dateText) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { day: "numeric", month: "short" }).format(new Date(`${dateText}T00:00:00`));
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { day: "numeric", month: "short" }).format(parseLocalDate(dateText));
 }
 
 function formatDisplayDate(dateText) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${dateText}T00:00:00`));
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", { day: "numeric", month: "short", year: "numeric" }).format(parseLocalDate(dateText));
 }
 
 function formatMonthTitle(monthValue) {
@@ -1254,6 +2096,15 @@ function iso(date) {
 
 function scheduleGroupForRole(role) {
   return role === "PN" || role === "HP" ? "PN" : "RN";
+}
+
+function schedulePositionGroupLabel(role) {
+  if (role === "Head Nurse") return "Head Nurse";
+  if (role === "Supervisor") return "Supervisor";
+  if (role === "RN") return "Nurse";
+  if (role === "PN") return "PN";
+  if (role === "HP") return "HP";
+  return role;
 }
 
 function activeStaff() {
@@ -1382,6 +2233,18 @@ function canEditOtRecord(record) {
 function canDeleteOtRecord(record) {
   if (["admin", "head_nurse"].includes(userRole())) return true;
   return record.staffId === currentUserId && !record.approvedBy;
+}
+
+function canManageLeaveRequests() {
+  return ["admin", "head_nurse"].includes(userRole());
+}
+
+function canEditLeaveRequest(request) {
+  return canManageLeaveRequests() || (request.staffId === currentUserId && request.status === "pending");
+}
+
+function canDeleteLeaveRequest(request) {
+  return canManageLeaveRequests() || (request.staffId === currentUserId && request.status === "pending");
 }
 
 function accessLabel(role) {
