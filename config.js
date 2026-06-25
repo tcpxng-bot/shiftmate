@@ -1,4 +1,4 @@
 window.SHIFTMATE_CONFIG = {
- url: "https://ssiakygtyuqmjyzxgoml.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzaWFreWd0eXVxbWp5enhnb21sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNzYsImV4cCI6MjA5NzcwNjE3Nn0.fjCPEAV2G3Di78HzqMNweUMUS1rpyWcheWDh6lKmZGE"
+  supabaseUrl: "https://ssiakygtyuqmjyzxgoml.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzaWFreWd0eXVxbWp5enhnb21sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzAxNzYsImV4cCI6MjA5NzcwNjE3Nn0.fjCPEAV2G3Di78HzqMNweUMUS1rpyWcheWDh6lKmZGE"
 };
