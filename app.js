@@ -668,8 +668,9 @@ async function saveStaff(event) {
   await upsertStaffCloud(person);
 }
 
-function moveStaff(id, direction) {
+async function moveStaff(id, direction) {
   normalizeStaffOrder();
+  const systemStaff = staff.filter(person => person.isSystem);
   const sorted = orderedStaff(true);
   const index = sorted.findIndex(item => item.id === id);
   const targetIndex = direction === "up" ? index - 1 : index + 1;
@@ -677,9 +678,11 @@ function moveStaff(id, direction) {
   const currentOrder = sorted[index].sortOrder;
   sorted[index].sortOrder = sorted[targetIndex].sortOrder;
   sorted[targetIndex].sortOrder = currentOrder;
-  staff = sorted.sort((a, b) => a.sortOrder - b.sortOrder);
+  staff = [...systemStaff, ...sorted.sort((a, b) => a.sortOrder - b.sortOrder)];
+  ensureDefaultAdmin();
   writeStore(STORE.staff, staff);
   renderAll();
+  await syncStaffOrderCloud(sorted);
 }
 
 function editStaff(id) {
@@ -1917,6 +1920,28 @@ async function deleteStaffCloud(id) {
     return true;
   } catch (error) {
     console.warn("Staff Supabase delete failed", error);
+    return false;
+  }
+}
+
+async function syncStaffOrderCloud(rows) {
+  if (!locseeDb) return false;
+  const cloudRows = rows.filter(person => !person.isSystem && isUuid(person.id)).map(staffCloudRow);
+  if (!cloudRows.length) return false;
+  try {
+    const { error } = await locseeDb
+      .from("shiftmate_staff")
+      .upsert(cloudRows, { onConflict: "id" });
+    if (error) throw error;
+    staffCloudLoaded = true;
+    staffCloudStatus = "Online/Supabase · order saved";
+    renderStaff();
+    return true;
+  } catch (error) {
+    console.warn("Staff order Supabase save failed", error);
+    staffCloudLoaded = false;
+    staffCloudStatus = "Supabase order save failed";
+    renderStaff();
     return false;
   }
 }
