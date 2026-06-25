@@ -1444,7 +1444,8 @@ function renderLocseeVacationTable() {
   const months = locseeFiscalMonths(el.locseeMonth.value);
   const fiscalBe = months[11].year + 543;
   const sourceLabel = locseeCloudLoaded ? "Online/Supabase" : locseeCloudStatus;
-  el.locseeVacationYearLabel.textContent = `${sourceLabel} · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
+  const matchedBookings = locseeBookings.filter(item => locseeSlots.some(slot => sameId(bookingSlotId(item), slot.id))).length;
+  el.locseeVacationYearLabel.textContent = `${sourceLabel} · ${locseeSlots.length} slots · ${locseeBookings.length} bookings · ${matchedBookings} matched · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
   el.locseeVacationGrid.innerHTML = months.map(month => locseeVacationMonthCard(month)).join("");
 }
 
@@ -1468,7 +1469,7 @@ function locseeVacationMonthCard(monthInfo) {
 function locseeVacationDayCell(date) {
   const slots = locseeSlotsForDate(date);
   const winners = uniqueNames(slots.flatMap(slotWinners));
-  const bookingNames = uniqueNames(slots.flatMap(slot => bookingsForSlot(slot.id).map(item => item.person_name || item.personName || "")));
+  const bookingNames = uniqueNames(slots.flatMap(slot => bookingsForSlot(slot.id).map(bookingPersonName)));
   const displayNames = winners.length ? winners : bookingNames;
   const bookingTotal = slots.reduce((total, slot) => total + bookingsForSlot(slot.id).length, 0);
   const holiday = holidayName(date);
@@ -1852,7 +1853,7 @@ async function saveLocseeBooking(event) {
     alert("This LOC slot already has a winner. Reopen it before adding bookings.");
     return;
   }
-  const exists = locseeBookings.some(item => item.slot_id === slot.id && normalizeName(item.person_name) === normalizeName(name));
+  const exists = locseeBookings.some(item => sameId(bookingSlotId(item), slot.id) && normalizeName(bookingPersonName(item)) === normalizeName(name));
   if (exists) {
     alert("This name is already booked in the selected LOC slot.");
     return;
@@ -1900,7 +1901,7 @@ function renderLocseeSlots() {
           <span>${slotDateLabel(slot)} · ${slotLeaveDays(slot)} day${slotLeaveDays(slot) > 1 ? "s" : ""}</span>
           <small>${bookings.length} booking${bookings.length === 1 ? "" : "s"}${winners.length ? ` · winner: ${escapeHtml(winners.join(", "))}` : ""}</small>
           <div class="locsee-chip-list">
-            ${bookings.map(item => `<span>${escapeHtml(item.person_name || item.personName || "")}</span>`).join("") || "<em>No bookings yet</em>"}
+            ${bookings.map(item => `<span>${escapeHtml(bookingPersonName(item))}</span>`).join("") || "<em>No bookings yet</em>"}
           </div>
         </div>
         <div class="locsee-row-status">
@@ -1925,7 +1926,7 @@ async function drawLocseeSlot(id) {
   if (!slot || !bookings.length) return;
   const winner = bookings[Math.floor(Math.random() * bookings.length)];
   slot.status = "drawn";
-  slot.winner_name = winner.person_name || winner.personName || "";
+  slot.winner_name = bookingPersonName(winner);
   slot.drawn_at = new Date().toISOString();
   const savedOnline = await updateLocseeSlotCloud(slot.id, { status: slot.status, winner_name: slot.winner_name });
   if (!savedOnline) writeLocseeBookingStore();
@@ -1975,7 +1976,7 @@ async function deleteLocseeSlot(id) {
   if (!slot || !confirm(`Delete LOC slot ${slot.label || slotDateLabel(slot)}?`)) return;
   const deletedOnline = await deleteLocseeSlotCloud(id);
   locseeSlots = locseeSlots.filter(item => item.id !== id);
-  locseeBookings = locseeBookings.filter(item => item.slot_id !== id && item.slotId !== id);
+  locseeBookings = locseeBookings.filter(item => !sameId(bookingSlotId(item), id));
   if (!deletedOnline) writeLocseeBookingStore();
   renderAll();
 }
@@ -1987,15 +1988,27 @@ function writeLocseeBookingStore() {
 }
 
 function bookingsForSlot(slotId) {
-  return locseeBookings.filter(item => item.slot_id === slotId || item.slotId === slotId);
+  return locseeBookings.filter(item => sameId(bookingSlotId(item), slotId));
+}
+
+function bookingSlotId(booking) {
+  return booking.slot_id ?? booking.slotId ?? booking.slot ?? booking.loc_slot_id ?? booking.locSlotId ?? "";
+}
+
+function bookingPersonName(booking) {
+  return booking.person_name ?? booking.personName ?? booking.name ?? booking.staff_name ?? booking.staffName ?? booking.full_name ?? booking.fullName ?? "";
+}
+
+function sameId(a, b) {
+  return String(a ?? "").trim() === String(b ?? "").trim();
 }
 
 function slotStartDate(slot) {
-  return slot.start_date || slot.startDate || "";
+  return normalizeDateText(slot.start_date || slot.startDate || slot.start || slot.date_start || slot.dateStart || "");
 }
 
 function slotEndDate(slot) {
-  return slot.end_date || slot.endDate || slotStartDate(slot);
+  return normalizeDateText(slot.end_date || slot.endDate || slot.end || slot.date_end || slot.dateEnd || slotStartDate(slot));
 }
 
 function slotLeaveDays(slot) {
@@ -2003,7 +2016,7 @@ function slotLeaveDays(slot) {
 }
 
 function slotWinners(slot) {
-  const raw = slot.winner_name || slot.winnerName || "";
+  const raw = slot.winner_name || slot.winnerName || slot.winner || "";
   return String(raw).split(/[,;\n]/).map(item => item.trim()).filter(Boolean);
 }
 
@@ -2022,6 +2035,10 @@ function slotMonthIntersects(slot, month) {
 
 function locseeSlotsForDate(dateText) {
   return locseeSlots.filter(slot => slotStartDate(slot) <= dateText && slotEndDate(slot) >= dateText);
+}
+
+function normalizeDateText(value) {
+  return String(value || "").slice(0, 10);
 }
 
 function locseeFiscalMonths(monthValue) {
