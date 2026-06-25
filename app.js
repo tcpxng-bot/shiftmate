@@ -85,6 +85,7 @@ let locseeSpecialHolidays = readStore(STORE.locseeHolidays, []);
 let locseeDb = null;
 let locseeCloudEnabled = false;
 let locseeCloudLoaded = false;
+let locseeCloudStatus = "Supabase config missing";
 let activeScheduleGroup = localStorage.getItem(STORE.scheduleGroup) || "RN";
 let currentUserId = sessionStorage.getItem(STORE.session) || "";
 
@@ -1442,7 +1443,7 @@ function renderLocseeVacationTable() {
   if (!el.locseeVacationGrid) return;
   const months = locseeFiscalMonths(el.locseeMonth.value);
   const fiscalBe = months[11].year + 543;
-  const sourceLabel = locseeCloudEnabled ? (locseeCloudLoaded ? "Online/Supabase" : "Supabase not loaded") : "Local only";
+  const sourceLabel = locseeCloudLoaded ? "Online/Supabase" : locseeCloudStatus;
   el.locseeVacationYearLabel.textContent = `${sourceLabel} · ปีงบประมาณ ${fiscalBe} · ${formatMonthTitle(`${months[0].year}-${String(months[0].month).padStart(2, "0")}`)} - ${formatMonthTitle(`${months[11].year}-${String(months[11].month).padStart(2, "0")}`)}`;
   el.locseeVacationGrid.innerHTML = months.map(month => locseeVacationMonthCard(month)).join("");
 }
@@ -1627,10 +1628,21 @@ function statusRank(status) {
 }
 
 function initLocseeSupabase() {
-  const config = window.SHIFTMATE_CONFIG || {};
-  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return;
-  locseeDb = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  const shiftmateConfig = window.SHIFTMATE_CONFIG || {};
+  const locseeConfig = window.LOCVAC_SUPABASE || {};
+  const supabaseUrl = shiftmateConfig.supabaseUrl || locseeConfig.url || "";
+  const supabaseAnonKey = shiftmateConfig.supabaseAnonKey || locseeConfig.anonKey || "";
+  if (!supabaseUrl || !supabaseAnonKey) {
+    locseeCloudStatus = "Supabase config missing";
+    return;
+  }
+  if (!window.supabase) {
+    locseeCloudStatus = "Supabase SDK not loaded";
+    return;
+  }
+  locseeDb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
   locseeCloudEnabled = true;
+  locseeCloudStatus = "Supabase not loaded";
 }
 
 async function loadLocseeCloudData() {
@@ -1669,6 +1681,7 @@ async function loadLocseeCloudData() {
   } catch (error) {
     console.warn("LOCSee Supabase load failed", error);
     locseeCloudLoaded = false;
+    locseeCloudStatus = "Supabase load failed";
     renderAll();
     return false;
   }
@@ -1785,6 +1798,7 @@ function locseeHolidayCloudRow(row) {
 function handleLocseeCloudWriteError(error) {
   console.warn("LOCSee Supabase write failed", error);
   locseeCloudLoaded = false;
+  locseeCloudStatus = "Supabase write failed";
   alert("บันทึก LOCSee ไป Supabase ไม่สำเร็จ ระบบจะเก็บไว้ในเครื่องก่อน กรุณาเช็คว่ารัน SQL ตาราง LOCSee แล้ว");
   renderAll();
   return false;
