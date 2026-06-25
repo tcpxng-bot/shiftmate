@@ -11,7 +11,7 @@
 </head>
 <body>
   <section class="login-gate" id="loginGate">
-    <form class="login-card" id="loginForm">
+    <form class="login-card" id="loginForm" autocomplete="off">
       <span class="login-deco deco-one"></span>
       <span class="login-deco deco-two"></span>
       <span class="login-deco deco-three"></span>
@@ -30,23 +30,15 @@
       <label>Username</label>
       <div class="login-field">
         <span class="field-icon user-icon" aria-hidden="true"></span>
-        <input class="input" id="loginUsername" autocomplete="username" required placeholder="admin">
+        <input class="input" id="loginUsername" autocomplete="off" required>
       </div>
       <label>Password</label>
       <div class="login-field">
         <span class="field-icon lock-icon" aria-hidden="true"></span>
-        <input class="input" id="loginPassword" type="password" autocomplete="current-password" required placeholder="admin123">
+        <input class="input" id="loginPassword" type="password" autocomplete="new-password" required>
       </div>
-      <button class="btn primary login-submit" type="submit"><span class="login-arrow" aria-hidden="true"></span>เข้าสู่ระบบ</button>
+      <button class="btn primary login-submit" type="submit">เข้าสู่ระบบ</button>
       <small id="loginMessage"></small>
-      <div class="login-help">
-        <span class="help-icon" aria-hidden="true"></span>
-        <div>
-          <strong>บัญชีทดลอง</strong>
-          <span>admin/admin123</span>
-          <span>head/head123 · senior/senior123 · staff/staff123</span>
-        </div>
-      </div>
       <p class="login-support">หากมีปัญหาในการเข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ</p>
     </form>
   </section>
@@ -290,8 +282,9 @@
     <section class="panel ot-panel" data-panel="ot">
       <div class="ot-page-head">
         <div>
-          <p class="eyebrow">OT Book</p>
-          <h2>⏱ สมุดบันทึก OT รายบุคคล</h2>
+          <p class="eyebrow">Overtime Management</p>
+          <h2>⏱ OT BOOK</h2>
+          <p>สมุดบันทึก OT รายบุคคล</p>
           <span>จัดการ OT สะสม, Vacation Bank และประวัติ OT ของเจ้าหน้าที่</span>
         </div>
         <div class="ot-head-actions">
@@ -434,20 +427,148 @@
         <div>
           <p class="eyebrow">LOC Vacation</p>
           <h2>LOCSee Integration</h2>
+          <p class="hint">Leave request, schedule sync, and master calendar for Phase 2</p>
+        </div>
+        <div class="toolbar">
+          <input class="input compact" id="locseeMonth" type="month">
+          <select class="input compact" id="locseeStatusFilter">
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
         </div>
       </div>
-      <article class="card loc-card">
-        <h3>โมดูล LOCSee พร้อมเชื่อมต่อใน Phase 2</h3>
-        <p>เฟสนี้วาง ShiftMate เป็นเว็บหลักก่อน จากนั้นจะย้าย LOCSee เดิมเข้ามาเป็นโมดูลย่อยเพื่อเชื่อมกับวันลา ตารางเวร และ Calendar กลาง</p>
-        <div class="loc-actions">
-          <span class="badge vac">LOC Vacation</span>
-          <span class="badge event">Leave Management</span>
-          <span class="badge r1">Master Calendar</span>
+
+      <div class="locsee-kpis">
+        <article><span>Pending</span><strong id="locseePendingKpi">0</strong></article>
+        <article><span>Approved</span><strong id="locseeApprovedKpi">0</strong></article>
+        <article><span>Used Days</span><strong id="locseeUsedKpi">0</strong></article>
+        <article><span>Schedule Sync</span><strong id="locseeSyncedKpi">0</strong></article>
+      </div>
+
+      <div class="locsee-workspace">
+        <form class="card form locsee-form-card" id="locseeForm">
+          <div class="form-title-row">
+            <h3>New Leave Request</h3>
+            <small id="locseeFormMode">Draft</small>
+          </div>
+          <input type="hidden" id="locseeRequestId">
+
+          <section class="form-section">
+            <h4>Request</h4>
+            <label>Staff</label>
+            <select class="input" id="locseeStaff" required></select>
+            <div class="grid two tight">
+              <div>
+                <label>Start Date</label>
+                <input class="input" id="locseeStartDate" type="date" required>
+              </div>
+              <div>
+                <label>End Date</label>
+                <input class="input" id="locseeEndDate" type="date" required>
+              </div>
+            </div>
+            <div class="grid two tight">
+              <div>
+                <label>Leave Type</label>
+                <select class="input" id="locseeType">
+                  <option value="annual">Vacation</option>
+                  <option value="personal">Personal Leave</option>
+                  <option value="sick">Sick Leave</option>
+                  <option value="study">Study Leave</option>
+                  <option value="training">Training</option>
+                  <option value="meeting">Meeting</option>
+                </select>
+              </div>
+              <div>
+                <label>Priority</label>
+                <select class="input" id="locseePriority">
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <label>Note</label>
+            <textarea class="input" id="locseeNote" rows="3" placeholder="Reason, handover note, or special coverage request"></textarea>
+          </section>
+
+          <div class="locsee-impact" id="locseeImpact"></div>
+
+          <div class="staff-form-actions">
+            <button class="btn primary" type="submit">Submit Request</button>
+            <button class="btn" id="clearLocseeForm" type="button">Clear</button>
+          </div>
+        </form>
+
+        <aside class="card locsee-calendar-card">
+          <h3>Master Calendar</h3>
+          <div class="locsee-calendar" id="locseeCalendar"></div>
+          <div class="list" id="locseeUpcoming"></div>
+        </aside>
+      </div>
+
+      <article class="card locsee-request-card">
+        <div class="ot-history-head">
+          <div>
+            <h3>Leave Requests</h3>
+            <p>Approve, reject, and push approved leave into the monthly schedule.</p>
+          </div>
         </div>
+        <div class="locsee-list" id="locseeRows"></div>
+      </article>
+
+      <article class="card locsee-request-card locsee-vacation-card">
+        <div class="ot-history-head">
+          <div>
+            <h3>LOC Vacation Table</h3>
+            <p id="locseeVacationYearLabel">Fiscal year overview</p>
+          </div>
+        </div>
+        <div class="locsee-vacation-grid" id="locseeVacationGrid"></div>
+      </article>
+
+      <article class="card locsee-request-card locsee-booking-card">
+        <div class="ot-history-head">
+          <div>
+            <h3>LOC Booking Draw</h3>
+            <p>Use the original LOCSee slot, booking, draw, and winner sync flow.</p>
+          </div>
+        </div>
+        <div class="locsee-booking-tools">
+          <form class="form locsee-mini-form" id="locseeSlotForm">
+            <h4>Create LOC Slot</h4>
+            <div class="grid two tight">
+              <div>
+                <label>Start Date</label>
+                <input class="input" id="locseeSlotStart" type="date" required>
+              </div>
+              <div>
+                <label>Leave Days</label>
+                <input class="input" id="locseeSlotDays" type="number" min="1" max="5" value="1" required>
+              </div>
+            </div>
+            <label>Initial Bookings</label>
+            <textarea class="input" id="locseeSlotNames" rows="3" placeholder="One name per line"></textarea>
+            <button class="btn primary" type="submit">Create Slot</button>
+          </form>
+
+          <form class="form locsee-mini-form" id="locseeBookingForm">
+            <h4>Add Booking</h4>
+            <label>LOC Slot</label>
+            <select class="input" id="locseeBookingSlot"></select>
+            <label>Name</label>
+            <input class="input" id="locseeBookingName" placeholder="Staff name" required>
+            <button class="btn" type="submit">Add Booking</button>
+          </form>
+        </div>
+        <div class="locsee-slot-list" id="locseeSlotRows"></div>
       </article>
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
   <script src="./app.js"></script>
 </body>
