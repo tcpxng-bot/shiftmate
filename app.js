@@ -1488,7 +1488,6 @@ function locseeVacationDayCell(date) {
   const winners = uniqueNames(slots.flatMap(slotWinners));
   const bookingNames = uniqueNames(slots.flatMap(slot => bookingsForSlot(slot.id).map(bookingPersonName)));
   const displayNames = winners.length ? winners : bookingNames;
-  const bookingTotal = slots.reduce((total, slot) => total + bookingsForSlot(slot.id).length, 0);
   const holiday = holidayName(date);
   const classes = [
     "locsee-vac-day",
@@ -1508,7 +1507,6 @@ function locseeVacationDayCell(date) {
   return `
     <div class="${classes}" title="${escapeHtml(title)}">
       <span>${parseLocalDate(date).getDate()}</span>
-      ${bookingTotal ? `<small>${bookingTotal} จอง</small>` : ""}
       ${displayNames.length ? `<b>${escapeHtml(displayNames.slice(0, 2).join(", "))}</b>` : ""}
     </div>
   `;
