@@ -1822,6 +1822,7 @@ function handleLocseeCloudWriteError(error) {
 
 async function loadStaffCloudData() {
   if (!locseeDb) return false;
+  const localStaff = activeStaff().filter(person => isUuid(person.id));
   try {
     const { data, error } = await locseeDb
       .from("shiftmate_staff")
@@ -1829,6 +1830,11 @@ async function loadStaffCloudData() {
       .order("sort_order", { ascending: true });
     if (error) throw error;
     const cloudStaff = (data || []).map(staffFromCloudRow);
+    const missingLocalStaff = localStaff.filter(localPerson => !cloudStaff.some(cloudPerson => sameId(cloudPerson.id, localPerson.id)));
+    if (missingLocalStaff.length) {
+      await seedStaffCloudFromLocal(missingLocalStaff);
+      return true;
+    }
     if (cloudStaff.length) {
       const systemAdmin = staff.find(person => person.id === "staff-admin" || person.username === "admin") || seedStaff()[0];
       normalizeSystemAdmin(systemAdmin);
@@ -1850,15 +1856,48 @@ async function loadStaffCloudData() {
   }
 }
 
+async function seedStaffCloudFromLocal(rows) {
+  if (!locseeDb || !rows.length) return false;
+  try {
+    const { error } = await locseeDb
+      .from("shiftmate_staff")
+      .upsert(rows.map(staffCloudRow), { onConflict: "id" });
+    if (error) throw error;
+    staffCloudLoaded = true;
+    staffCloudStatus = `Online/Supabase · synced ${rows.length}`;
+    const { data, error: reloadError } = await locseeDb
+      .from("shiftmate_staff")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    if (reloadError) throw reloadError;
+    const cloudStaff = (data || []).map(staffFromCloudRow);
+    const systemAdmin = staff.find(person => person.id === "staff-admin" || person.username === "admin") || seedStaff()[0];
+    normalizeSystemAdmin(systemAdmin);
+    staff = [systemAdmin, ...cloudStaff.filter(person => person.username !== "admin" && !person.isSystem)];
+    writeStore(STORE.staff, staff);
+    renderAll();
+    return true;
+  } catch (error) {
+    console.warn("Staff local seed failed", error);
+    staffCloudLoaded = false;
+    staffCloudStatus = "Supabase seed failed";
+    renderAll();
+    return false;
+  }
+}
+
 async function upsertStaffCloud(person) {
   if (!locseeDb || person.isSystem || !isUuid(person.id)) return false;
+  staffCloudStatus = "Syncing staff...";
+  renderStaff();
   try {
     const { error } = await locseeDb
       .from("shiftmate_staff")
       .upsert(staffCloudRow(person), { onConflict: "id" });
     if (error) throw error;
     staffCloudLoaded = true;
-    staffCloudStatus = "Online/Supabase";
+    staffCloudStatus = "Online/Supabase · saved";
+    renderStaff();
     return true;
   } catch (error) {
     console.warn("Staff Supabase save failed", error);
