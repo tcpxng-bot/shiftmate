@@ -1033,6 +1033,12 @@ button, input, select { font: inherit; }
   padding: 2px 4px 4px 2px;
 }
 
+.staff-sync-note {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .staff-card {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) auto;
