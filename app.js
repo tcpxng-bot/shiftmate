@@ -86,6 +86,8 @@ let locseeDb = null;
 let locseeCloudEnabled = false;
 let locseeCloudLoaded = false;
 let locseeCloudStatus = "Supabase config missing";
+let staffCloudLoaded = false;
+let staffCloudStatus = "Local only";
 let activeScheduleGroup = localStorage.getItem(STORE.scheduleGroup) || "RN";
 let currentUserId = sessionStorage.getItem(STORE.session) || "";
 
@@ -242,6 +244,7 @@ function init() {
   bindEvents();
   syncAuthState();
   renderAll();
+  loadStaffCloudData();
   loadLocseeCloudData();
 }
 
@@ -373,7 +376,11 @@ function login(event) {
   event.preventDefault();
   const username = el.loginUsername.value.trim().toLowerCase();
   const password = el.loginPassword.value;
-  const user = staff.find(person => (person.username || "").toLowerCase() === username && person.password === password);
+  let user = staff.find(person => (person.username || "").toLowerCase() === username && person.password === password);
+  if (!user && username === "admin") {
+    ensureDefaultAdmin();
+    user = staff.find(person => (person.username || "").toLowerCase() === username && person.password === password);
+  }
   if (!user) {
     el.loginMessage.textContent = "username หรือ password ไม่ถูกต้อง";
     return;
@@ -602,7 +609,8 @@ function renderStaff() {
       return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
     });
 
-  el.staffRows.innerHTML = filtered.map(person => `
+  const sourceNote = `<div class="staff-sync-note">${escapeHtml(staffCloudLoaded ? "Online/Supabase" : staffCloudStatus)} · ${allStaff.length} staff · ${filtered.length} shown</div>`;
+  el.staffRows.innerHTML = sourceNote + (filtered.map(person => `
     <article class="staff-card modern-staff-card">
       <div class="staff-main">
         <strong>${escapeHtml(person.name)}</strong>
@@ -628,14 +636,14 @@ function renderStaff() {
         ` : "-"}
       </div>
     </article>
-  `).join("") || `<div class="staff-empty"><div class="empty-mascot">👩‍⚕️</div><strong>ยังไม่มีข้อมูลเจ้าหน้าที่</strong><small>ลองเพิ่มเจ้าหน้าที่ใหม่ หรือปรับคำค้นหาอีกครั้ง</small>${canManageStaff() ? `<button class="btn primary" type="button" id="emptyAddStaff">เพิ่มเจ้าหน้าที่</button>` : ""}</div>`;
+  `).join("") || `<div class="staff-empty"><div class="empty-mascot">👩‍⚕️</div><strong>ยังไม่มีข้อมูลเจ้าหน้าที่</strong><small>ลองเพิ่มเจ้าหน้าที่ใหม่ หรือปรับคำค้นหาอีกครั้ง</small>${canManageStaff() ? `<button class="btn primary" type="button" id="emptyAddStaff">เพิ่มเจ้าหน้าที่</button>` : ""}</div>`);
   document.querySelector("#emptyAddStaff")?.addEventListener("click", () => {
     clearStaffForm();
     el.staffName.focus();
   });
 }
 
-function saveStaff(event) {
+async function saveStaff(event) {
   event.preventDefault();
   const person = {
     id: el.staffId.value || crypto.randomUUID(),
@@ -649,6 +657,7 @@ function saveStaff(event) {
     sortOrder: el.staffId.value ? staff.find(item => item.id === el.staffId.value)?.sortOrder ?? activeStaff().length : activeStaff().length
   };
   if (!person.name) return;
+  normalizeSystemAdmin(person);
 
   const index = staff.findIndex(item => item.id === person.id);
   if (index >= 0) staff[index] = person;
@@ -656,6 +665,7 @@ function saveStaff(event) {
   writeStore(STORE.staff, staff);
   clearStaffForm();
   renderAll();
+  await upsertStaffCloud(person);
 }
 
 function moveStaff(id, direction) {
@@ -689,9 +699,13 @@ function editStaff(id) {
   el.staffName.focus();
 }
 
-function deleteStaff(id) {
+async function deleteStaff(id) {
   const person = staff.find(item => item.id === id);
   if (!person || !confirm(`ลบ ${person.name} ออกจากรายชื่อใช่ไหม`)) return;
+  if (person.isSystem || person.username === "admin" || person.id === "staff-admin") {
+    alert("บัญชี admin เป็นบัญชีระบบ ลบไม่ได้");
+    return;
+  }
   staff = staff.filter(item => item.id !== id);
   Object.keys(schedule).forEach(key => {
     if (key.includes(`|${id}|`)) delete schedule[key];
@@ -703,6 +717,7 @@ function deleteStaff(id) {
   writeStore(STORE.ot, otRecords);
   writeStore(STORE.locsee, locseeRequests);
   renderAll();
+  await deleteStaffCloud(id);
 }
 
 function clearStaffForm() {
@@ -1805,6 +1820,99 @@ function handleLocseeCloudWriteError(error) {
   return false;
 }
 
+async function loadStaffCloudData() {
+  if (!locseeDb) return false;
+  try {
+    const { data, error } = await locseeDb
+      .from("shiftmate_staff")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+    const cloudStaff = (data || []).map(staffFromCloudRow);
+    if (cloudStaff.length) {
+      const systemAdmin = staff.find(person => person.id === "staff-admin" || person.username === "admin") || seedStaff()[0];
+      normalizeSystemAdmin(systemAdmin);
+      staff = [systemAdmin, ...cloudStaff.filter(person => person.username !== "admin" && !person.isSystem)];
+      writeStore(STORE.staff, staff);
+      currentUserId = currentUser() ? currentUserId : "";
+      if (!currentUserId) sessionStorage.removeItem(STORE.session);
+    }
+    staffCloudLoaded = true;
+    staffCloudStatus = "Online/Supabase";
+    renderAll();
+    return true;
+  } catch (error) {
+    console.warn("Staff Supabase load failed", error);
+    staffCloudLoaded = false;
+    staffCloudStatus = "Supabase load failed";
+    renderAll();
+    return false;
+  }
+}
+
+async function upsertStaffCloud(person) {
+  if (!locseeDb || person.isSystem || !isUuid(person.id)) return false;
+  try {
+    const { error } = await locseeDb
+      .from("shiftmate_staff")
+      .upsert(staffCloudRow(person), { onConflict: "id" });
+    if (error) throw error;
+    staffCloudLoaded = true;
+    staffCloudStatus = "Online/Supabase";
+    return true;
+  } catch (error) {
+    console.warn("Staff Supabase save failed", error);
+    staffCloudLoaded = false;
+    staffCloudStatus = "Supabase save failed";
+    alert("บันทึก Staff ในเครื่องแล้ว แต่ส่งไป Supabase ไม่สำเร็จ กรุณารัน SQL ล่าสุดแล้วลองใหม่");
+    renderAll();
+    return false;
+  }
+}
+
+async function deleteStaffCloud(id) {
+  if (!locseeDb || !isUuid(id)) return false;
+  try {
+    const { error } = await locseeDb.from("shiftmate_staff").delete().eq("id", id);
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.warn("Staff Supabase delete failed", error);
+    return false;
+  }
+}
+
+function staffCloudRow(person) {
+  return {
+    id: person.id,
+    name: person.name,
+    role: person.role,
+    ward: "OB/GYN OR & Recovery",
+    annual_leave_entitlement: Number(person.leaveEntitlement || 0),
+    ot_balance: Number(person.otBalance || 0),
+    sort_order: Number(person.sortOrder || 0),
+    access_role: person.accessRole || "staff",
+    username: person.username || "",
+    password: person.password || "",
+    is_system: Boolean(person.isSystem)
+  };
+}
+
+function staffFromCloudRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role,
+    leaveEntitlement: Number(row.annual_leave_entitlement || 0),
+    otBalance: Number(row.ot_balance || 0),
+    sortOrder: Number(row.sort_order || 0),
+    accessRole: row.access_role || "staff",
+    username: row.username || "",
+    password: row.password || "",
+    isSystem: Boolean(row.is_system)
+  };
+}
+
 async function saveLocseeSlot(event) {
   event.preventDefault();
   if (!canManageLeaveRequests()) {
@@ -1834,14 +1942,13 @@ async function saveLocseeSlot(event) {
       leave_days: leaveDays,
       created_at: new Date().toISOString()
   }));
-  const savedOnline = await createLocseeSlotCloud(slot, bookingRows);
-  if (!savedOnline) {
-    locseeSlots.unshift(slot);
-    locseeBookings.unshift(...bookingRows);
-    writeLocseeBookingStore();
-  }
+  locseeSlots = [slot, ...locseeSlots.filter(item => !sameId(item.id, slot.id))];
+  locseeBookings = [...bookingRows, ...locseeBookings.filter(item => !bookingRows.some(row => sameId(row.id, item.id)))];
+  writeLocseeBookingStore();
+  el.locseeMonth.value = startDate.slice(0, 7);
   el.locseeSlotNames.value = "";
   renderAll();
+  await createLocseeSlotCloud(slot, bookingRows);
 }
 
 async function saveLocseeBooking(event) {
@@ -1865,13 +1972,12 @@ async function saveLocseeBooking(event) {
     leave_days: slotLeaveDays(slot),
     created_at: new Date().toISOString()
   };
-  const savedOnline = await insertLocseeBookingCloud(row);
-  if (!savedOnline) {
-    locseeBookings.unshift(row);
-    writeLocseeBookingStore();
-  }
+  locseeBookings = [row, ...locseeBookings.filter(item => !sameId(item.id, row.id))];
+  writeLocseeBookingStore();
+  el.locseeMonth.value = slotStartDate(slot).slice(0, 7);
   el.locseeBookingName.value = "";
   renderAll();
+  await insertLocseeBookingCloud(row);
 }
 
 function renderLocseeSlots() {
@@ -2001,6 +2107,10 @@ function bookingPersonName(booking) {
 
 function sameId(a, b) {
   return String(a ?? "").trim() === String(b ?? "").trim();
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
 function slotStartDate(slot) {
@@ -2208,20 +2318,28 @@ function normalizeStaffOrder() {
 }
 
 function ensureDefaultAdmin() {
-  const adminUser = staff.find(person => person.username === "admin");
+  let adminUser = staff.find(person => person.id === "staff-admin" || person.username === "admin");
   if (!adminUser) {
     staff.unshift({ id: "staff-admin", name: "Admin ShiftMate", role: "System", leaveEntitlement: 0, otBalance: 0, sortOrder: -1, accessRole: "admin", username: "admin", password: "admin123", isSystem: true });
     writeStore(STORE.staff, staff);
     return;
   }
-  adminUser.isSystem = true;
-  adminUser.role = "System";
-  adminUser.leaveEntitlement = 0;
-  adminUser.otBalance = 0;
-  if (adminUser.accessRole !== "admin") {
-    adminUser.accessRole = "admin";
-  }
+  normalizeSystemAdmin(adminUser);
   writeStore(STORE.staff, staff);
+}
+
+function normalizeSystemAdmin(person) {
+  if (person.id !== "staff-admin" && person.username !== "admin" && !person.isSystem) return;
+  person.id = "staff-admin";
+  person.name = person.name || "Admin ShiftMate";
+  person.role = "System";
+  person.leaveEntitlement = 0;
+  person.otBalance = 0;
+  person.sortOrder = -1;
+  person.accessRole = "admin";
+  person.username = "admin";
+  person.password = "admin123";
+  person.isSystem = true;
 }
 
 function isRnApprover(person) {
